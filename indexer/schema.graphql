@@ -1,0 +1,383 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Vayu Protocol — GraphQL Schema
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Public read API served by the indexer. Consumed by:
+#   - Dashboard UI (map, leaderboard, epoch explorer)
+#   - Fisherman verification tools
+#   - Reporter wallet apps (claim rewards, view history)
+#   - Third-party data consumers
+#
+# Conventions:
+#   - Token amounts are String (uint256 wei — too large for GraphQL Int)
+#   - H3 indexes are String (hex-encoded uint64, e.g. "0x0882830a1fffffff")
+#   - Ethereum addresses are String (0x-prefixed, checksummed)
+#   - bytes32 hashes are String (0x-prefixed, 66 chars)
+#   - Timestamps are Int (UNIX seconds)
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scalars
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""Ethereum address (0x-prefixed, 42 chars)"""
+scalar Address
+
+"""uint256 as a decimal string (token amounts in wei)"""
+scalar BigInt
+
+"""0x-prefixed bytes32 hash (66 chars)"""
+scalar Bytes32
+
+"""H3 cell index as hex string (0x-prefixed, 18 chars)"""
+scalar H3Index
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Enums
+# ─────────────────────────────────────────────────────────────────────────────
+
+enum ChallengeType {
+  SPATIAL_ANOMALY
+  REWARD_COMPUTATION
+  DATA_INTEGRITY
+  DUPLICATE_LOCATION
+}
+
+enum ClaimStatus {
+  UNCLAIMED
+  CLAIMED
+  EXPIRED
+}
+
+enum StakeEventType {
+  STAKED
+  UNSTAKE_INITIATED
+  WITHDRAWN
+}
+
+enum ReporterType {
+  UNKNOWN
+  INDIVIDUAL
+  LOW_COST
+  REFERENCE
+}
+
+"""Sort direction"""
+enum OrderDirection {
+  ASC
+  DESC
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Core Types
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""A committed epoch with on-chain and off-chain metadata."""
+type Epoch {
+  epochId: Int!
+  relay: Address!
+  dataRoot: Bytes32!
+  rewardRoot: Bytes32!
+  ipfsCid: String!
+  activeCells: Int!
+  totalReadings: Int!
+  totalReward: BigInt!
+  committedAt: Int!
+  blockNumber: Int!
+  txHash: Bytes32!
+  challengeWindowEnd: Int!
+  finalized: Boolean!
+  swept: Boolean!
+
+  """Per-cell aggregates for this epoch"""
+  cells: [CellEpoch!]!
+
+  """All readings in this epoch (paginated)"""
+  readings(first: Int = 100, skip: Int = 0): [Reading!]!
+
+  """Challenges submitted against this epoch"""
+  challenges: [Challenge!]!
+
+  """Claims made for this epoch"""
+  claims: [Claim!]!
+}
+
+"""Per-cell aggregate for a single epoch."""
+type CellEpoch {
+  epochId: Int!
+  cellId: H3Index!
+  medianAqi: Int!
+  reporterCount: Int!
+  cellBudget: BigInt!
+
+  """Individual readings in this cell for this epoch"""
+  readings: [Reading!]!
+}
+
+"""A single AQI reading from a reporter in one cell/epoch."""
+type Reading {
+  id: ID!
+  epochId: Int!
+  cellId: H3Index!
+  reporter: Address!
+  aqi: Int!
+  pm25: Int!
+  pm10: Int!
+  o3: Int!
+  no2: Int!
+  so2: Int!
+  co: Int!
+  timestamp: Int!
+  score: Float
+  rewardAmount: BigInt
+}
+
+"""Reporter profile with lifetime stats and current stake."""
+type Reporter {
+  address: Address!
+  staker: Address
+  stake: BigInt!
+  pendingUnstake: BigInt!
+  withdrawableAt: Int
+  totalReadings: Int!
+  totalRewards: BigInt!
+  totalClaimed: BigInt!
+  avgScore: Float!
+  consecutiveZeros: Int!
+  reporterType: ReporterType!
+  firstSeenEpoch: Int
+  lastSeenEpoch: Int
+  isSlashed: Boolean!
+  totalSlashed: BigInt!
+
+  """Recent readings by this reporter (paginated, newest first)"""
+  readings(first: Int = 50, skip: Int = 0): [Reading!]!
+
+  """Reward entries for this reporter"""
+  rewards(status: ClaimStatus, first: Int = 50, skip: Int = 0): [RewardEntry!]!
+
+  """Stake event history"""
+  stakeHistory(first: Int = 20, skip: Int = 0): [StakeEvent!]!
+}
+
+"""Relay operator profile."""
+type Relay {
+  address: Address!
+  stake: BigInt!
+  pendingUnstake: BigInt!
+  withdrawableAt: Int
+  isActive: Boolean!
+  epochsCommitted: Int!
+  totalFeesEarned: BigInt!
+  totalSlashed: BigInt!
+  registeredAt: Int
+  registeredBlock: Int
+  registeredTx: Bytes32
+
+  """Epochs committed by this relay (paginated, newest first)"""
+  epochs(first: Int = 50, skip: Int = 0): [Epoch!]!
+}
+
+"""A reward claim transaction."""
+type Claim {
+  id: ID!
+  epochId: Int!
+  reporter: Address!
+  cellId: H3Index!
+  amount: BigInt!
+  blockNumber: Int!
+  txHash: Bytes32!
+  claimedAt: Int!
+}
+
+"""A fisherman challenge (successful or failed)."""
+type Challenge {
+  id: ID!
+  epochId: Int!
+  challengeType: ChallengeType!
+  challenger: Address!
+  target: Address
+  cellId: H3Index
+  succeeded: Boolean!
+  slashAmount: BigInt!
+  fishermanReward: BigInt!
+  blockNumber: Int!
+  txHash: Bytes32!
+  challengedAt: Int!
+}
+
+"""A stake lifecycle event (stake, unstake, withdraw)."""
+type StakeEvent {
+  id: ID!
+  account: Address!
+  staker: Address
+  eventType: StakeEventType!
+  amount: BigInt!
+  withdrawableAt: Int
+  blockNumber: Int!
+  txHash: Bytes32!
+  eventAt: Int!
+}
+
+"""Sweep of expired unclaimed rewards back to treasury."""
+type EpochSweep {
+  epochId: Int!
+  amount: BigInt!
+  blockNumber: Int!
+  txHash: Bytes32!
+  sweptAt: Int!
+}
+
+"""A reporter's reward for a specific epoch (with claim status)."""
+type RewardEntry {
+  epochId: Int!
+  cellId: H3Index!
+  amount: BigInt!
+  status: ClaimStatus!
+  score: Float
+  claimableAfter: Int!
+  expiresAt: Int!
+  claimTxHash: Bytes32
+}
+
+"""Protocol-wide statistics."""
+type ProtocolStats {
+  totalEpochsCommitted: Int!
+  totalReadingsIngested: Int!
+  totalRewardsDistributed: BigInt!
+  totalRewardsClaimed: BigInt!
+  totalRewardsExpired: BigInt!
+  totalSlashed: BigInt!
+  totalChallenges: Int!
+  successfulChallenges: Int!
+  activeReporters: Int!
+  activeRelays: Int!
+  activeCells: Int!
+  latestEpochId: Int!
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pagination
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""Input for filtering epochs"""
+input EpochFilter {
+  relay: Address
+  minEpochId: Int
+  maxEpochId: Int
+  finalized: Boolean
+}
+
+"""Input for filtering readings"""
+input ReadingFilter {
+  epochId: Int
+  cellId: H3Index
+  reporter: Address
+  minAqi: Int
+  maxAqi: Int
+}
+
+"""Input for filtering challenges"""
+input ChallengeFilter {
+  epochId: Int
+  challengeType: ChallengeType
+  challenger: Address
+  target: Address
+  succeeded: Boolean
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Queries
+# ─────────────────────────────────────────────────────────────────────────────
+
+type Query {
+  # ─── Epochs ─────────────────────────────────────────────────────────────
+
+  """Get a single epoch by ID."""
+  epoch(epochId: Int!): Epoch
+
+  """List epochs with optional filtering and pagination."""
+  epochs(
+    filter: EpochFilter
+    orderBy: OrderDirection = DESC
+    first: Int = 50
+    skip: Int = 0
+  ): [Epoch!]!
+
+  """Get the latest committed epoch."""
+  latestEpoch: Epoch
+
+  # ─── Cells ──────────────────────────────────────────────────────────────
+
+  """Get the latest aggregate for a specific H3 cell (most recent epoch)."""
+  cell(cellId: H3Index!): CellEpoch
+
+  """Get historical data for a cell across epochs."""
+  cellHistory(
+    cellId: H3Index!
+    first: Int = 24
+    skip: Int = 0
+  ): [CellEpoch!]!
+
+  """List all cells active in the latest epoch."""
+  activeCells: [CellEpoch!]!
+
+  # ─── Readings ───────────────────────────────────────────────────────────
+
+  """Query readings with filters."""
+  readings(
+    filter: ReadingFilter
+    first: Int = 100
+    skip: Int = 0
+  ): [Reading!]!
+
+  # ─── Reporters ──────────────────────────────────────────────────────────
+
+  """Get a reporter's profile by address."""
+  reporter(address: Address!): Reporter
+
+  """Leaderboard: top reporters by total rewards earned."""
+  topReporters(first: Int = 20, skip: Int = 0): [Reporter!]!
+
+  # ─── Relays ─────────────────────────────────────────────────────────────
+
+  """Get a relay's profile by address."""
+  relay(address: Address!): Relay
+
+  """List all registered relays."""
+  relays(activeOnly: Boolean = true): [Relay!]!
+
+  # ─── Challenges ─────────────────────────────────────────────────────────
+
+  """Query challenges with filters."""
+  challenges(
+    filter: ChallengeFilter
+    first: Int = 50
+    skip: Int = 0
+  ): [Challenge!]!
+
+  # ─── Claims ─────────────────────────────────────────────────────────────
+
+  """Get claim history for a reporter."""
+  claims(
+    reporter: Address!
+    first: Int = 50
+    skip: Int = 0
+  ): [Claim!]!
+
+  # ─── Sweeps ─────────────────────────────────────────────────────────────
+
+  """List epoch sweeps."""
+  sweeps(first: Int = 20, skip: Int = 0): [EpochSweep!]!
+
+  # ─── Protocol ───────────────────────────────────────────────────────────
+
+  """Aggregate protocol statistics."""
+  protocolStats: ProtocolStats!
+}
