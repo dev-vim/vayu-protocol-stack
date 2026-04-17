@@ -5,10 +5,11 @@ libs     = ["lib"]
 solc     = "0.8.24"
 optimizer        = true
 optimizer_runs   = 200
-via_ir           = false
+via_ir           = true
 
 remappings = [
     "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@vayu/types/=src/types/",
     "@vayu/interfaces/=src/interfaces/",
 ]

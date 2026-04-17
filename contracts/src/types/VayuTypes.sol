@@ -42,6 +42,7 @@ library VayuTypes {
     ///   - aqi is on the 0-500 AQI scale, fits in uint16.
     ///   - h3Index is the full 64-bit H3 cell index at resolution 8.
     ///   - epochId is a monotonically increasing counter (1 epoch = 1 hour).
+    // forge-lint: disable-next-item(pascal-case-struct) — AQI is a domain acronym, AqiReading is less readable
     struct AQIReading {
         address reporter;   // 20 bytes — device Ethereum address
         uint64  h3Index;    //  8 bytes — H3 cell (resolution 8)
@@ -109,6 +110,7 @@ library VayuTypes {
     ///   Leaf sort key (for deterministic tree construction):
     ///   keccak256(abi.encodePacked(reporter, h3Index))
     ///   Leaves must be sorted ascending by this key before tree construction.
+    // forge-lint: disable-next-item(asm-keccak256) — readability over ~30 gas saving in rarely-called Merkle leaf computation
     function dataLeaf(AQIReading memory r) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(
             r.reporter,
@@ -136,6 +138,7 @@ library VayuTypes {
     ///   amount is in token wei (18 decimals).
     ///
     ///   Leaf sort key: reporter address (ascending).
+    // forge-lint: disable-next-item(asm-keccak256) — readability over ~30 gas saving in rarely-called Merkle leaf computation
     function rewardLeaf(
         address reporter,
         uint32  epochId,
@@ -157,6 +160,7 @@ library VayuTypes {
     /// @notice Computes the EIP-712 struct hash for an AQIReading.
     ///         Used by the relay to verify reporter signatures, and by
     ///         fishermen during on-chain challenge verification.
+    // forge-lint: disable-next-item(asm-keccak256) — readability over ~30 gas saving in EIP-712 struct hashing
     function hashReading(AQIReading memory r) internal pure returns (bytes32) {
         return keccak256(abi.encode(
             AQI_READING_TYPEHASH,
@@ -177,6 +181,7 @@ library VayuTypes {
     /// @notice Computes the full EIP-712 digest (ready for ecrecover).
     ///         domainSeparator is computed once by the settlement contract
     ///         at initialization and cached.
+    // forge-lint: disable-next-item(asm-keccak256) — readability over ~30 gas saving in EIP-712 digest
     function toTypedDataHash(
         bytes32 domainSeparator,
         AQIReading memory r
