@@ -80,13 +80,6 @@ interface IVayuEpochSettlement {
         bool            succeeded
     );
 
-    /// @notice Emitted when the relay corrects a reward tree after a
-    ///         successful RewardComputation challenge.
-    event RewardRootCorrected(
-        uint32  indexed epochId,
-        bytes32         correctedRoot
-    );
-
     /// @notice Emitted when a reporter stakes tokens (for themselves or
     ///         on behalf of a device).
     event Staked(
@@ -289,6 +282,32 @@ interface IVayuEpochSettlement {
         bytes32[]            calldata proof1,
         VayuTypes.AQIReading calldata reading2,
         bytes32[]            calldata proof2
+    ) external;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Challenge: Penalty List Fraud
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Dispute a reporter's inclusion in a penalty list.
+    ///         The relay claimed the reporter had CONSECUTIVE_ZERO_SCORES_THRESHOLD
+    ///         consecutive zero-score epochs. The fisherman disproves this by
+    ///         providing a Merkle-proven reading from the reporter in an epoch
+    ///         within that lookback window. If the relay included the reading in
+    ///         the data tree, it acknowledged the reporter was active — putting
+    ///         them on the penalty list for inactivity is self-contradictory.
+    ///
+    /// @param penaltyEpochId The epoch where the reporter was penalized.
+    /// @param reporter       The reporter address that was wrongfully penalized.
+    /// @param proofEpochId   An epoch within the lookback window where the
+    ///                       reporter has a valid reading.
+    /// @param reading        A reading from the reporter in proofEpochId.
+    /// @param proof          Merkle proof for the reading against proofEpoch's dataRoot.
+    function challengePenaltyList(
+        uint32                       penaltyEpochId,
+        address                      reporter,
+        uint32                       proofEpochId,
+        VayuTypes.AQIReading calldata reading,
+        bytes32[]            calldata proof
     ) external;
 
     // ─────────────────────────────────────────────────────────────────────────

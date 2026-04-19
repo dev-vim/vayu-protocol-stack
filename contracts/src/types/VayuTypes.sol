@@ -219,7 +219,8 @@ library VayuTypes {
         SpatialAnomaly,         // cell median inconsistent with neighbours
         RewardComputation,      // relay computed rewards incorrectly
         DataIntegrity,          // data tree root doesn't match IPFS blob
-        DuplicateLocation       // same reporter in two distant cells, same epoch
+        DuplicateLocation,      // same reporter in two distant cells, same epoch
+        PenaltyListFraud        // relay wrongfully included reporter in penalty list
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -260,6 +261,7 @@ library VayuTypes {
     uint16 public constant SLASH_RELAY_REWARD_COMPUTATION    = 3000;  // 30%
     uint16 public constant SLASH_RELAY_CENSORSHIP            = 2000;  // 20%
     uint16 public constant SLASH_RELAY_OFFLINE               = 500;   //  5%
+    uint16 public constant SLASH_RELAY_PENALTY_LIST          = 3000;  // 30%
 
     /// @dev Fisherman receives this share of the slash pool (basis points).
     uint16 public constant FISHERMAN_SHARE = 5000; // 50%

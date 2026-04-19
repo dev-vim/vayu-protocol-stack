@@ -60,8 +60,10 @@ contract VayuEpochSettlement is Ownable, Pausable {
     }
     mapping(address => RelayInfo) public relayInfo;
 
-    // ── Consecutive zero-score tracking (for auto-slash) ──
-    mapping(address => uint8) public consecutiveZeroScores;
+    // ── Penalty list tracking (for challengePenaltyList) ──
+    // penaltySlashed[epochId][reporter] = true if reporter was slashed via
+    // the penalty list in that epoch. Reset on successful challenge.
+    mapping(uint32 => mapping(address => bool)) public penaltySlashed;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Events
@@ -77,7 +79,6 @@ contract VayuEpochSettlement is Ownable, Pausable {
     event Slashed(address indexed offender, uint256 slashAmount, uint256 fishermanReward, VayuTypes.ChallengeType challengeType, uint32 epochId);
     event ChallengeSubmitted(uint32 indexed epochId, address indexed challenger, VayuTypes.ChallengeType challengeType);
     event ChallengeResolved(uint32 indexed epochId, address indexed challenger, VayuTypes.ChallengeType challengeType, bool succeeded);
-    event RewardRootCorrected(uint32 indexed epochId, bytes32 correctedRoot);
     event Staked(address indexed staker, address indexed reporter, uint256 amount);
     event UnstakeInitiated(address indexed account, uint256 amount, uint64 withdrawableAt);
     event Withdrawn(address indexed account, uint256 amount);
@@ -103,6 +104,7 @@ contract VayuEpochSettlement is Ownable, Pausable {
     error CooldownNotElapsed();
     error RelayAlreadyRegistered();
     error RelayNotRegistered();
+    error PendingWithdrawalExists();
     error NotStaker();
     error ZeroAmount();
     error ZeroAddress();
@@ -111,7 +113,10 @@ contract VayuEpochSettlement is Ownable, Pausable {
     error SameCellNotAllowed();
     error EpochMismatch();
     error NotAnomaly();
-    error RewardsCorrect();
+    error EmptyArray();
+    error ReporterNotPenalized();
+    error ProofEpochOutOfRange();
+    error ReporterMismatch();
 
     // ─────────────────────────────────────────────────────────────────────────
     // Constructor
@@ -165,7 +170,6 @@ contract VayuEpochSettlement is Ownable, Pausable {
         uint256 relayFee = (released * VayuTypes.RELAY_FEE_BPS) / VayuTypes.BPS_DENOMINATOR;
         uint256 rewardBudget = released - relayFee;
 
-        // ── Effects ──
         epochBalance[epochId] = rewardBudget;
 
         epochCommitments[epochId] = VayuTypes.EpochCommitment({
@@ -180,10 +184,25 @@ contract VayuEpochSettlement is Ownable, Pausable {
             swept: false
         });
 
-        // Auto-slash reporters on the penalty list (effects only — batch transfer below)
+        // Auto-slash reporters on the penalty list (effects only — batch transfer below).
+        // Duplicate detection uses an O(n²) scan over calldata rather than a
+        // storage/transient-storage mapping. For the expected penalty list sizes
+        // (< ~70 entries per epoch) this is cheaper: calldata reads cost ~3 gas
+        // each vs 20k+ gas per SSTORE or ~200 gas per TSTORE slot.
         uint256 totalPenalty;
         for (uint256 i = 0; i < penaltyList.length; i++) {
             address reporter = penaltyList[i];
+
+            // Skip duplicate entries to prevent double-slashing
+            bool isDuplicate;
+            for (uint256 j = 0; j < i; j++) {
+                if (penaltyList[j] == reporter) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            if (isDuplicate) continue;
+
             uint256 reporterStakeAmt = reporterStakes[reporter].active;
             if (reporterStakeAmt > 0) {
                 // Slash a fixed percentage of the reporter's active stake.
@@ -191,6 +210,7 @@ contract VayuEpochSettlement is Ownable, Pausable {
                 // Slashed tokens go to treasury (no fisherman in auto-slash).
                 uint256 slashAmt = (reporterStakeAmt * VayuTypes.SLASH_REPORTER_CONSECUTIVE_ZEROS) / VayuTypes.BPS_DENOMINATOR;
                 reporterStakes[reporter].active -= slashAmt;
+                penaltySlashed[epochId][reporter] = true;
                 totalPenalty += slashAmt;
                 emit Slashed(reporter, slashAmt, 0, VayuTypes.ChallengeType.SpatialAnomaly, epochId);
             }
@@ -279,11 +299,11 @@ contract VayuEpochSettlement is Ownable, Pausable {
         VayuTypes.AQIReading[] calldata neighbourReadings,
         bytes32[][] calldata neighbourProofs
     ) external whenNotPaused {
+        if (cellReadings.length == 0 || neighbourReadings.length == 0) revert EmptyArray();
+
         VayuTypes.EpochCommitment storage epoch = epochCommitments[epochId];
         if (epoch.committedAt == 0) revert EpochNotCommitted();
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
-
-        // ── Checks: verify all Merkle proofs before any effects ──
 
         // Verify all cell reading proofs
         for (uint256 i = 0; i < cellReadings.length; i++) {
@@ -306,7 +326,6 @@ contract VayuEpochSettlement is Ownable, Pausable {
         uint256 diff = cellMedian > neighbourMean ? cellMedian - neighbourMean : neighbourMean - cellMedian;
         if (diff <= VayuTypes.SPATIAL_TOLERANCE_AQI) revert NotAnomaly();
 
-        // ── Effects: all checks passed, emit before state mutations ──
         emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.SpatialAnomaly);
 
         // Slash all reporters in disputed cell
@@ -348,12 +367,11 @@ contract VayuEpochSettlement is Ownable, Pausable {
         VayuTypes.AQIReading calldata reading2,
         bytes32[] calldata proof2
     ) external whenNotPaused {
+        if (reading1.reporter != reading2.reporter) revert SameReporterRequired();
+
         VayuTypes.EpochCommitment storage epoch = epochCommitments[epochId];
         if (epoch.committedAt == 0) revert EpochNotCommitted();
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
-        if (reading1.reporter != reading2.reporter) revert SameReporterRequired();
-
-        // ── Checks: verify proofs and cross-check fields ──
 
         // Verify proofs
         bytes32 leaf1 = VayuTypes.dataLeaf(reading1);
@@ -365,7 +383,6 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (reading1.h3Index == reading2.h3Index) revert SameCellNotAllowed();
         if (reading1.epochId != epochId || reading2.epochId != epochId) revert EpochMismatch();
 
-        // ── Effects: all checks passed ──
         emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.DuplicateLocation);
 
         // Slash reporter
@@ -404,8 +421,6 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (epoch.committedAt == 0) revert EpochNotCommitted();
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
 
-        // ── Checks: verify reading proofs ──
-
         // Verify reading proofs
         for (uint256 i = 0; i < cellReadings.length; i++) {
             bytes32 leaf = VayuTypes.dataLeaf(cellReadings[i]);
@@ -418,7 +433,6 @@ contract VayuEpochSettlement is Ownable, Pausable {
             // by providing the data to recompute on-chain
         }
 
-        // ── Effects: all checks passed ──
         emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.RewardComputation);
 
         // Recompute reward amounts on-chain for the disputed cell
@@ -448,6 +462,67 @@ contract VayuEpochSettlement is Ownable, Pausable {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Challenge: Penalty List Fraud
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Dispute a reporter's inclusion in a penalty list.
+    ///         The relay claimed the reporter had CONSECUTIVE_ZERO_SCORES_THRESHOLD
+    ///         consecutive zero-score epochs. The fisherman disproves this by
+    ///         providing a Merkle-proven reading from the reporter in an epoch
+    ///         within that lookback window. If the relay included the reading in
+    ///         the data tree, it acknowledged the reporter was active — putting
+    ///         them on the penalty list for inactivity is self-contradictory.
+    function challengePenaltyList(
+        uint32 penaltyEpochId,
+        address reporter,
+        uint32 proofEpochId,
+        VayuTypes.AQIReading calldata reading,
+        bytes32[] calldata proof
+    ) external whenNotPaused {
+        if (reading.reporter != reporter) revert ReporterMismatch();
+        if (reading.epochId != proofEpochId) revert EpochMismatch();
+
+        uint32 threshold = VayuTypes.CONSECUTIVE_ZERO_SCORES_THRESHOLD;
+        uint32 windowStart = penaltyEpochId > threshold ? penaltyEpochId - threshold : 0;
+        if (proofEpochId <= windowStart || proofEpochId > penaltyEpochId) revert ProofEpochOutOfRange();
+
+        VayuTypes.EpochCommitment storage penaltyEpoch = epochCommitments[penaltyEpochId];
+        if (penaltyEpoch.committedAt == 0) revert EpochNotCommitted();
+        if (block.timestamp > penaltyEpoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
+        if (!penaltySlashed[penaltyEpochId][reporter]) revert ReporterNotPenalized();
+
+        VayuTypes.EpochCommitment storage proofEpoch = epochCommitments[proofEpochId];
+        if (proofEpoch.committedAt == 0) revert EpochNotCommitted();
+
+        bytes32 leaf = VayuTypes.dataLeaf(reading);
+        if (!MerkleProof.verify(proof, proofEpoch.dataRoot, leaf)) revert InvalidMerkleProof();
+
+        emit ChallengeSubmitted(penaltyEpochId, msg.sender, VayuTypes.ChallengeType.PenaltyListFraud);
+
+        // Mark penalty as disputed so it can't be re-challenged
+        penaltySlashed[penaltyEpochId][reporter] = false;
+
+        // Slash the relay that submitted the fraudulent penalty list
+        address relay = penaltyEpoch.relay;
+        RelayInfo storage ri = relayInfo[relay];
+        uint256 slashAmt = (ri.stake * VayuTypes.SLASH_RELAY_PENALTY_LIST) / VayuTypes.BPS_DENOMINATOR;
+        ri.stake -= slashAmt;
+
+        if (ri.stake < MIN_RELAY_STAKE) {
+            ri.active = false;
+            emit RelayDeactivated(relay);
+        }
+
+        // Split: fisherman bounty + remainder to treasury
+        uint256 fishermanReward = (slashAmt * VayuTypes.FISHERMAN_SHARE) / VayuTypes.BPS_DENOMINATOR;
+        TOKEN.safeTransfer(msg.sender, fishermanReward);
+        TOKEN.safeTransfer(treasury, slashAmt - fishermanReward);
+
+        emit Slashed(relay, slashAmt, fishermanReward, VayuTypes.ChallengeType.PenaltyListFraud, penaltyEpochId);
+        emit ChallengeResolved(penaltyEpochId, msg.sender, VayuTypes.ChallengeType.PenaltyListFraud, true);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Reporter Staking
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -468,8 +543,8 @@ contract VayuEpochSettlement is Ownable, Pausable {
     }
 
     function unstakeReporter(address reporter, uint256 amount) external {
-        if (reporterStaker[reporter] != msg.sender && reporter != msg.sender) revert NotStaker();
         if (amount == 0) revert ZeroAmount();
+        if (reporterStaker[reporter] != msg.sender && reporter != msg.sender) revert NotStaker();
         if (reporterStakes[reporter].active < amount) revert InsufficientStake();
 
         // Move tokens from active → pending and start the cooldown timer.
@@ -506,8 +581,8 @@ contract VayuEpochSettlement is Ownable, Pausable {
 
     function registerRelay() external whenNotPaused {
         if (relayInfo[msg.sender].active) revert RelayAlreadyRegistered();
+        if (relayInfo[msg.sender].pendingUnstake > 0) revert PendingWithdrawalExists();
 
-        // Effects before interactions (CEI)
         relayInfo[msg.sender] = RelayInfo({
             stake: MIN_RELAY_STAKE,
             active: true,
