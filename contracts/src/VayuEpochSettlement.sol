@@ -130,6 +130,8 @@ contract VayuEpochSettlement is Ownable, Pausable {
         REWARDS_POOL = VayuRewards(_rewardsPool);
         treasury = _treasury;
 
+        // Build the EIP-712 domain separator at deploy time so signed
+        // messages are scoped to this contract + chain (replay protection).
         DOMAIN_SEPARATOR = keccak256(abi.encode(
             VayuTypes.EIP712_DOMAIN_TYPEHASH,
             keccak256(bytes(VayuTypes.DOMAIN_NAME)),
@@ -158,8 +160,9 @@ contract VayuEpochSettlement is Ownable, Pausable {
         // Pull epoch budget from rewards pool
         uint256 released = REWARDS_POOL.releaseEpochBudget(epochId);
 
-        // Deduct relay fee
-        uint256 relayFee = (released * VayuTypes.RELAY_FEE_BPS) / 10_000;
+        // Deduct relay fee: (totalBudget * feeBps) / 10_000 gives the
+        // relay's cut; remainder goes to the epoch reward pool.
+        uint256 relayFee = (released * VayuTypes.RELAY_FEE_BPS) / VayuTypes.BPS_DENOMINATOR;
         uint256 rewardBudget = released - relayFee;
         TOKEN.safeTransfer(msg.sender, relayFee);
 
@@ -182,7 +185,10 @@ contract VayuEpochSettlement is Ownable, Pausable {
             address reporter = penaltyList[i];
             uint256 reporterStakeAmt = reporterStakes[reporter].active;
             if (reporterStakeAmt > 0) {
-                uint256 slashAmt = (reporterStakeAmt * VayuTypes.SLASH_REPORTER_CONSECUTIVE_ZEROS) / 10_000;
+                // Slash a fixed percentage of the reporter's active stake.
+                // BPS math: (stake * rateBps) / 10_000 = slashed amount.
+                // Slashed tokens go to treasury (no fisherman in auto-slash).
+                uint256 slashAmt = (reporterStakeAmt * VayuTypes.SLASH_REPORTER_CONSECUTIVE_ZEROS) / VayuTypes.BPS_DENOMINATOR;
                 reporterStakes[reporter].active -= slashAmt;
                 TOKEN.safeTransfer(treasury, slashAmt);
                 emit Slashed(reporter, slashAmt, 0, VayuTypes.ChallengeType.SpatialAnomaly, epochId);
@@ -208,13 +214,19 @@ contract VayuEpochSettlement is Ownable, Pausable {
     ) external whenNotPaused {
         VayuTypes.EpochCommitment storage epoch = epochCommitments[epochId];
         if (epoch.committedAt == 0) revert EpochNotCommitted();
+        // Claims only open after the challenge window closes and before the
+        // 90-day expiry — this gives fishermen time to dispute first.
         if (block.timestamp < epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowOpen();
         if (block.timestamp > epoch.committedAt + VayuTypes.CLAIM_EXPIRY) revert ClaimExpired();
 
+        // Derive a unique claim key from (epoch, caller, cell) to prevent
+        // double-claiming the same cell reward in the same epoch.
         // forge-lint: disable-next-line(asm-keccak256) — readability over ~30 gas saving in claim key derivation
         bytes32 claimKey = keccak256(abi.encodePacked(epochId, msg.sender, h3Index));
         if (_claimed[claimKey]) revert AlreadyClaimed();
 
+        // Reconstruct the expected Merkle leaf and verify the caller's
+        // inclusion proof against the relay-committed reward root.
         bytes32 leaf = VayuTypes.rewardLeaf(msg.sender, epochId, h3Index, amount);
         if (!MerkleProof.verify(proof, epoch.rewardRoot, leaf)) revert InvalidMerkleProof();
 
@@ -278,13 +290,14 @@ contract VayuEpochSettlement is Ownable, Pausable {
             if (!MerkleProof.verify(neighbourProofs[i], epoch.dataRoot, leaf)) revert InvalidMerkleProof();
         }
 
-        // Compute medians
+        // Compare disputed cell's median AQI against its neighbours' mean.
         uint256 cellMedian = _computeMedian(cellReadings);
         uint256 neighbourMean = _computeMean(neighbourReadings);
 
-        // Check anomaly
+        // Absolute difference must exceed SPATIAL_TOLERANCE_AQI to qualify
+        // as an anomaly — below that threshold the deviation is acceptable.
         uint256 diff = cellMedian > neighbourMean ? cellMedian - neighbourMean : neighbourMean - cellMedian;
-        if (diff <= 50) revert NotAnomaly(); // SPATIAL_TOLERANCE_AQI = 50
+        if (diff <= VayuTypes.SPATIAL_TOLERANCE_AQI) revert NotAnomaly();
 
         // Slash all reporters in disputed cell
         uint256 totalSlashed;
@@ -292,15 +305,17 @@ contract VayuEpochSettlement is Ownable, Pausable {
             address reporter = cellReadings[i].reporter;
             uint256 stake = reporterStakes[reporter].active;
             if (stake > 0) {
-                uint256 slashAmt = (stake * VayuTypes.SLASH_REPORTER_FISHERMAN) / 10_000;
+                // BPS slash: (stake * slashRateBps) / 10_000
+                uint256 slashAmt = (stake * VayuTypes.SLASH_REPORTER_FISHERMAN) / VayuTypes.BPS_DENOMINATOR;
                 reporterStakes[reporter].active -= slashAmt;
                 totalSlashed += slashAmt;
                 emit Slashed(reporter, slashAmt, 0, VayuTypes.ChallengeType.SpatialAnomaly, epochId);
             }
         }
 
-        // Pay fisherman
-        uint256 fishermanReward = (totalSlashed * VayuTypes.FISHERMAN_SHARE) / 10_000;
+        // Split slashed tokens: FISHERMAN_SHARE% to the challenger who
+        // proved the anomaly, remainder to treasury.
+        uint256 fishermanReward = (totalSlashed * VayuTypes.FISHERMAN_SHARE) / VayuTypes.BPS_DENOMINATOR;
         if (fishermanReward > 0) {
             TOKEN.safeTransfer(msg.sender, fishermanReward);
         }
@@ -344,10 +359,13 @@ contract VayuEpochSettlement is Ownable, Pausable {
         address reporter = reading1.reporter;
         uint256 stake = reporterStakes[reporter].active;
         if (stake > 0) {
-            uint256 slashAmt = (stake * VayuTypes.SLASH_REPORTER_DUPLICATE_LOCATION) / 10_000;
+            // Slash the reporter for submitting from two different H3 cells
+            // in the same epoch — physically impossible, so penalize.
+            uint256 slashAmt = (stake * VayuTypes.SLASH_REPORTER_DUPLICATE_LOCATION) / VayuTypes.BPS_DENOMINATOR;
             reporterStakes[reporter].active -= slashAmt;
 
-            uint256 fishermanReward = (slashAmt * VayuTypes.FISHERMAN_SHARE) / 10_000;
+            // Split: fisherman bounty + remainder to treasury
+            uint256 fishermanReward = (slashAmt * VayuTypes.FISHERMAN_SHARE) / VayuTypes.BPS_DENOMINATOR;
             TOKEN.safeTransfer(msg.sender, fishermanReward);
             TOKEN.safeTransfer(treasury, slashAmt - fishermanReward);
 
@@ -391,17 +409,21 @@ contract VayuEpochSettlement is Ownable, Pausable {
         // This is intentionally simplified for v1 — proper implementation
         // requires the full scoring algorithm on-chain
         // For now: slash the relay if the fisherman can demonstrate a discrepancy
+        // Slash the relay that committed the faulty reward tree.
         address relay = epoch.relay;
         RelayInfo storage ri = relayInfo[relay];
-        uint256 slashAmt = (ri.stake * VayuTypes.SLASH_RELAY_REWARD_COMPUTATION) / 10_000;
+        uint256 slashAmt = (ri.stake * VayuTypes.SLASH_RELAY_REWARD_COMPUTATION) / VayuTypes.BPS_DENOMINATOR;
         ri.stake -= slashAmt;
 
+        // If the relay's remaining stake drops below the minimum, force-
+        // deactivate so it can no longer commit epochs.
         if (ri.stake < MIN_RELAY_STAKE) {
             ri.active = false;
             emit RelayDeactivated(relay);
         }
 
-        uint256 fishermanReward = (slashAmt * VayuTypes.FISHERMAN_SHARE) / 10_000;
+        // Split: fisherman bounty + remainder to treasury
+        uint256 fishermanReward = (slashAmt * VayuTypes.FISHERMAN_SHARE) / VayuTypes.BPS_DENOMINATOR;
         TOKEN.safeTransfer(msg.sender, fishermanReward);
         TOKEN.safeTransfer(treasury, slashAmt - fishermanReward);
 
@@ -433,6 +455,8 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (amount == 0) revert ZeroAmount();
         if (reporterStakes[reporter].active < amount) revert InsufficientStake();
 
+        // Move tokens from active → pending and start the cooldown timer.
+        // Pending stake cannot be slashed but also cannot back the reporter.
         reporterStakes[reporter].active -= amount;
         reporterStakes[reporter].pending += amount;
         reporterStakes[reporter].withdrawableAt = uint64(block.timestamp + REPORTER_UNSTAKE_COOLDOWN);

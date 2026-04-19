@@ -247,7 +247,12 @@ library VayuTypes {
     /// @dev Maximum H3 resolution accepted (resolution 8 = 0x08 in top nibble).
     uint8  public constant H3_RESOLUTION = 8;
 
-    // Slash rates (basis points, denominator = 10_000)
+    // Slash rates (basis points, denominator = BPS_DENOMINATOR)
+    uint16 public constant BPS_DENOMINATOR = 10_000;
+
+    /// @dev AQI difference threshold between a cell and its neighbours to qualify as anomalous.
+    uint16 public constant SPATIAL_TOLERANCE_AQI = 50;
+
     uint16 public constant SLASH_REPORTER_CONSECUTIVE_ZEROS = 500;   //  5%
     uint16 public constant SLASH_REPORTER_FISHERMAN          = 2000;  // 20%
     uint16 public constant SLASH_REPORTER_DUPLICATE_LOCATION = 5000;  // 50%
