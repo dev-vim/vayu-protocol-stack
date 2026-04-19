@@ -164,8 +164,8 @@ contract VayuEpochSettlement is Ownable, Pausable {
         // relay's cut; remainder goes to the epoch reward pool.
         uint256 relayFee = (released * VayuTypes.RELAY_FEE_BPS) / VayuTypes.BPS_DENOMINATOR;
         uint256 rewardBudget = released - relayFee;
-        TOKEN.safeTransfer(msg.sender, relayFee);
 
+        // ── Effects ──
         epochBalance[epochId] = rewardBudget;
 
         epochCommitments[epochId] = VayuTypes.EpochCommitment({
@@ -180,7 +180,8 @@ contract VayuEpochSettlement is Ownable, Pausable {
             swept: false
         });
 
-        // Auto-slash reporters on the penalty list
+        // Auto-slash reporters on the penalty list (effects only — batch transfer below)
+        uint256 totalPenalty;
         for (uint256 i = 0; i < penaltyList.length; i++) {
             address reporter = penaltyList[i];
             uint256 reporterStakeAmt = reporterStakes[reporter].active;
@@ -190,9 +191,15 @@ contract VayuEpochSettlement is Ownable, Pausable {
                 // Slashed tokens go to treasury (no fisherman in auto-slash).
                 uint256 slashAmt = (reporterStakeAmt * VayuTypes.SLASH_REPORTER_CONSECUTIVE_ZEROS) / VayuTypes.BPS_DENOMINATOR;
                 reporterStakes[reporter].active -= slashAmt;
-                TOKEN.safeTransfer(treasury, slashAmt);
+                totalPenalty += slashAmt;
                 emit Slashed(reporter, slashAmt, 0, VayuTypes.ChallengeType.SpatialAnomaly, epochId);
             }
+        }
+
+        // ── Interactions (CEI: all transfers after state mutations) ──
+        TOKEN.safeTransfer(msg.sender, relayFee);
+        if (totalPenalty > 0) {
+            TOKEN.safeTransfer(treasury, totalPenalty);
         }
 
         emit EpochCommitted(epochId, msg.sender, dataRoot, rewardRoot, ipfsCid, activeCells, totalReadings);
@@ -276,7 +283,7 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (epoch.committedAt == 0) revert EpochNotCommitted();
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
 
-        emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.SpatialAnomaly);
+        // ── Checks: verify all Merkle proofs before any effects ──
 
         // Verify all cell reading proofs
         for (uint256 i = 0; i < cellReadings.length; i++) {
@@ -298,6 +305,9 @@ contract VayuEpochSettlement is Ownable, Pausable {
         // as an anomaly — below that threshold the deviation is acceptable.
         uint256 diff = cellMedian > neighbourMean ? cellMedian - neighbourMean : neighbourMean - cellMedian;
         if (diff <= VayuTypes.SPATIAL_TOLERANCE_AQI) revert NotAnomaly();
+
+        // ── Effects: all checks passed, emit before state mutations ──
+        emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.SpatialAnomaly);
 
         // Slash all reporters in disputed cell
         uint256 totalSlashed;
@@ -343,7 +353,7 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
         if (reading1.reporter != reading2.reporter) revert SameReporterRequired();
 
-        emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.DuplicateLocation);
+        // ── Checks: verify proofs and cross-check fields ──
 
         // Verify proofs
         bytes32 leaf1 = VayuTypes.dataLeaf(reading1);
@@ -354,6 +364,9 @@ contract VayuEpochSettlement is Ownable, Pausable {
         // Check cells are different and readings are actually from this epoch
         if (reading1.h3Index == reading2.h3Index) revert SameCellNotAllowed();
         if (reading1.epochId != epochId || reading2.epochId != epochId) revert EpochMismatch();
+
+        // ── Effects: all checks passed ──
+        emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.DuplicateLocation);
 
         // Slash reporter
         address reporter = reading1.reporter;
@@ -391,7 +404,7 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (epoch.committedAt == 0) revert EpochNotCommitted();
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
 
-        emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.RewardComputation);
+        // ── Checks: verify reading proofs ──
 
         // Verify reading proofs
         for (uint256 i = 0; i < cellReadings.length; i++) {
@@ -404,6 +417,9 @@ contract VayuEpochSettlement is Ownable, Pausable {
             // The fisherman must show the relay's claimed amounts are wrong
             // by providing the data to recompute on-chain
         }
+
+        // ── Effects: all checks passed ──
+        emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.RewardComputation);
 
         // Recompute reward amounts on-chain for the disputed cell
         // This is intentionally simplified for v1 — proper implementation
@@ -443,9 +459,10 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (reporterStakes[reporter].active == 0 && reporterStaker[reporter] == address(0)) {
             reporterStaker[reporter] = msg.sender;
         }
+    
+        reporterStakes[reporter].active += amount;
 
         TOKEN.safeTransferFrom(msg.sender, address(this), amount);
-        reporterStakes[reporter].active += amount;
 
         emit Staked(msg.sender, reporter, amount);
     }
@@ -490,13 +507,15 @@ contract VayuEpochSettlement is Ownable, Pausable {
     function registerRelay() external whenNotPaused {
         if (relayInfo[msg.sender].active) revert RelayAlreadyRegistered();
 
-        TOKEN.safeTransferFrom(msg.sender, address(this), MIN_RELAY_STAKE);
+        // Effects before interactions (CEI)
         relayInfo[msg.sender] = RelayInfo({
             stake: MIN_RELAY_STAKE,
             active: true,
             pendingUnstake: 0,
             withdrawableAt: 0
         });
+
+        TOKEN.safeTransferFrom(msg.sender, address(this), MIN_RELAY_STAKE);
 
         emit RelayRegistered(msg.sender, MIN_RELAY_STAKE);
     }
