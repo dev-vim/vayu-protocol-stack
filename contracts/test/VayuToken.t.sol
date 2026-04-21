@@ -138,6 +138,33 @@ contract VayuTokenTest is Test {
         assertEq(token.allowance(treasury, alice), 0);
     }
 
+    function test_revert_transferFromInsufficientAllowance() public {
+        address spender = makeAddr("spender");
+        address bob     = makeAddr("bob");
+
+        vm.prank(treasury);
+        token.approve(spender, 100);
+
+        vm.prank(spender);
+        vm.expectRevert();
+        // forge-lint: disable-next-item(erc20-unchecked-transfer) — OZ ERC-20 reverts on failure
+        token.transferFrom(treasury, bob, 101);
+    }
+
+    function test_revert_transferFromInsufficientOwnerBalance() public {
+        address spender = makeAddr("spender");
+        address owner   = makeAddr("owner");
+        address bob     = makeAddr("bob");
+
+        vm.prank(owner);
+        token.approve(spender, 1);
+
+        vm.prank(spender);
+        vm.expectRevert();
+        // forge-lint: disable-next-item(erc20-unchecked-transfer) — OZ ERC-20 reverts on failure
+        token.transferFrom(owner, bob, 1);
+    }
+
     function test_revert_transferInsufficientBalance() public {
         address alice = makeAddr("alice");
         address bob   = makeAddr("bob");

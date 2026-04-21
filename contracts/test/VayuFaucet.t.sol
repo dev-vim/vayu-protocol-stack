@@ -222,6 +222,30 @@ contract VayuFaucetTest is Test {
         assertEq(faucet.balance(), balBefore);
     }
 
+    function test_revert_fund_withoutApproval() public {
+        address funder = makeAddr("funder");
+        uint256 amount = 1_000 * 1e18;
+
+        // forge-lint: disable-next-item(erc20-unchecked-transfer) — OZ ERC-20 reverts on failure
+        token.transfer(funder, amount);
+
+        vm.prank(funder);
+        vm.expectRevert();
+        faucet.fund(amount);
+    }
+
+    function test_revert_fund_insufficientBalance() public {
+        address funder = makeAddr("funder");
+        uint256 amount = 1_000 * 1e18;
+
+        vm.prank(funder);
+        token.approve(address(faucet), amount);
+
+        vm.prank(funder);
+        vm.expectRevert();
+        faucet.fund(amount);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // balance view
     // ─────────────────────────────────────────────────────────────────────────
