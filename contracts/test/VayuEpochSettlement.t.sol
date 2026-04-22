@@ -258,12 +258,15 @@ contract SettlementBase is Test {
 
 contract VES_Constructor_Test is SettlementBase {
 
+    // Checks that TOKEN, REWARDS_POOL, and treasury are stored exactly as passed.
     function test_constructor_setsImmutables() public view {
         assertEq(address(settlement.TOKEN()),        address(token));
         assertEq(address(settlement.REWARDS_POOL()), address(rewards));
         assertEq(settlement.treasury(),              treasury);
     }
 
+    // Recomputes the EIP-712 domain separator locally using the same inputs and
+    // asserts it matches the immutable stored by the constructor.
     function test_constructor_buildsDomainSeparator() public view {
         bytes32 expected = keccak256(abi.encode(
             VayuTypes.EIP712_DOMAIN_TYPEHASH,
@@ -275,24 +278,29 @@ contract VES_Constructor_Test is SettlementBase {
         assertEq(settlement.DOMAIN_SEPARATOR(), expected);
     }
 
+    // The deploying address (owner) must be recorded as the Ownable owner.
     function test_constructor_ownerIsDeployer() public view {
         assertEq(settlement.owner(), owner);
     }
 
+    // Contract must start unpaused so all entry-points are immediately usable.
     function test_constructor_notPaused() public view {
         assertFalse(settlement.paused());
     }
 
+    // Passing address(0) for the token must revert with ZeroAddress.
     function test_revert_constructor_zeroToken() public {
         vm.expectRevert(VayuEpochSettlement.ZeroAddress.selector);
         new VayuEpochSettlement(address(0), address(rewards), treasury);
     }
 
+    // Passing address(0) for the rewards pool must revert with ZeroAddress.
     function test_revert_constructor_zeroRewards() public {
         vm.expectRevert(VayuEpochSettlement.ZeroAddress.selector);
         new VayuEpochSettlement(address(token), address(0), treasury);
     }
 
+    // Passing address(0) for the treasury must revert with ZeroAddress.
     function test_revert_constructor_zeroTreasury() public {
         vm.expectRevert(VayuEpochSettlement.ZeroAddress.selector);
         new VayuEpochSettlement(address(token), address(rewards), address(0));
@@ -307,16 +315,19 @@ contract VES_RelayStaking_Test is SettlementBase {
 
     // ── registerRelay ─────────────────────────────────────────────────────────
 
+    // After a successful registration the relay must appear as active.
     function test_registerRelay_setsActive() public {
         _registerRelay(relay);
         assertTrue(settlement.isActiveRelay(relay));
     }
 
+    // The recorded stake must equal exactly MIN_RELAY.
     function test_registerRelay_recordsMinStake() public {
         _registerRelay(relay);
         assertEq(settlement.relayStake(relay), MIN_RELAY);
     }
 
+    // MIN_RELAY tokens must leave the relay's wallet and land in the contract.
     function test_registerRelay_transfersTokens() public {
         uint256 before = token.balanceOf(relay);
         _registerRelay(relay);
@@ -324,6 +335,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         assertEq(token.balanceOf(address(settlement)), MIN_RELAY);
     }
 
+    // A RelayRegistered event with the correct relay and stake amount must fire.
     function test_registerRelay_emitsEvent() public {
         vm.startPrank(relay);
         token.approve(address(settlement), MIN_RELAY);
@@ -333,6 +345,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         vm.stopPrank();
     }
 
+    // A relay that is already active cannot register a second time.
     function test_revert_registerRelay_alreadyRegistered() public {
         _registerRelay(relay);
         vm.startPrank(relay);
@@ -342,6 +355,8 @@ contract VES_RelayStaking_Test is SettlementBase {
         vm.stopPrank();
     }
 
+    // A relay with an outstanding pending unstake (deregistered but not yet
+    // withdrawn) must not be allowed to re-register.
     function test_revert_registerRelay_pendingWithdrawalExists() public {
         _registerRelay(relay);
         vm.prank(relay);
@@ -354,6 +369,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         vm.stopPrank();
     }
 
+    // registerRelay is a state-mutating entry-point and must be blocked when paused.
     function test_revert_registerRelay_whenPaused() public {
         vm.prank(owner);
         settlement.pause();
@@ -366,6 +382,7 @@ contract VES_RelayStaking_Test is SettlementBase {
 
     // ── deregisterRelay ───────────────────────────────────────────────────────
 
+    // After deregistration the relay must no longer be listed as active.
     function test_deregisterRelay_deactivates() public {
         _registerRelay(relay);
         vm.prank(relay);
@@ -373,6 +390,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         assertFalse(settlement.isActiveRelay(relay));
     }
 
+    // The active stake is zeroed and the full amount is moved into pendingUnstake.
     function test_deregisterRelay_movesPendingUnstake() public {
         _registerRelay(relay);
         vm.prank(relay);
@@ -382,6 +400,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         assertEq(pending, MIN_RELAY);
     }
 
+    // withdrawableAt must be set to now + RELAY_UNSTAKE_COOLDOWN.
     function test_deregisterRelay_setsCooldown() public {
         _registerRelay(relay);
         vm.prank(relay);
@@ -390,6 +409,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         assertEq(withdrawableAt, block.timestamp + RELAY_UNSTAKE_COOLDOWN);
     }
 
+    // Both RelayDeactivated and UnstakeInitiated events must fire in order.
     function test_deregisterRelay_emitsEvents() public {
         _registerRelay(relay);
         uint64 expectedAt = uint64(block.timestamp + RELAY_UNSTAKE_COOLDOWN);
@@ -402,6 +422,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         vm.stopPrank();
     }
 
+    // An address that was never registered cannot call deregisterRelay.
     function test_revert_deregisterRelay_notRegistered() public {
         vm.prank(relay);
         vm.expectRevert(VayuEpochSettlement.RelayNotRegistered.selector);
@@ -410,6 +431,7 @@ contract VES_RelayStaking_Test is SettlementBase {
 
     // ── withdrawRelay ─────────────────────────────────────────────────────────
 
+    // After the cooldown elapses the pending stake must be returned to the relay.
     function test_withdrawRelay_transfersTokens() public {
         _registerRelay(relay);
         vm.prank(relay);
@@ -421,6 +443,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         assertEq(token.balanceOf(relay), before + MIN_RELAY);
     }
 
+    // pendingUnstake must be zeroed after a successful withdrawal.
     function test_withdrawRelay_clearsPending() public {
         _registerRelay(relay);
         vm.prank(relay);
@@ -432,6 +455,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         assertEq(pending, 0);
     }
 
+    // Calling withdraw without a prior deregistration (nothing pending) must revert.
     function test_revert_withdrawRelay_noPending() public {
         _registerRelay(relay);
         vm.prank(relay);
@@ -439,6 +463,7 @@ contract VES_RelayStaking_Test is SettlementBase {
         settlement.withdrawRelay();
     }
 
+    // Calling withdraw before the cooldown has elapsed must revert.
     function test_revert_withdrawRelay_cooldownNotElapsed() public {
         _registerRelay(relay);
         vm.prank(relay);
@@ -457,16 +482,20 @@ contract VES_ReporterStaking_Test is SettlementBase {
 
     // ── stakeFor ──────────────────────────────────────────────────────────────
 
+    // Staking on behalf of a reporter must credit the full amount to their active stake.
     function test_stakeFor_updatesActiveStake() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         assertEq(settlement.reporterStake(reporter), MIN_REPORT);
     }
 
+    // The first address to stake for a reporter is permanently recorded as their staker.
     function test_stakeFor_recordsStaker() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         assertEq(settlement.reporterStaker(reporter), staker);
     }
 
+    // A subsequent top-up from a different address must increase the balance but
+    // must not overwrite the original staker.
     function test_stakeFor_additionalStake_doesNotChangeStaker() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         deal(address(token), address(this), MIN_REPORT);
@@ -479,6 +508,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         assertEq(settlement.reporterStake(reporter), MIN_REPORT * 2);
     }
 
+    // A Staked event with the correct staker, reporter, and amount must fire.
     function test_stakeFor_emitsEvent() public {
         vm.startPrank(staker);
         token.approve(address(settlement), MIN_REPORT);
@@ -488,6 +518,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         vm.stopPrank();
     }
 
+    // Staking for address(0) is nonsensical and must revert with ZeroAddress.
     function test_revert_stakeFor_zeroReporter() public {
         vm.startPrank(staker);
         token.approve(address(settlement), MIN_REPORT);
@@ -496,12 +527,14 @@ contract VES_ReporterStaking_Test is SettlementBase {
         vm.stopPrank();
     }
 
+    // Staking zero tokens has no effect and must revert with ZeroAmount.
     function test_revert_stakeFor_zeroAmount() public {
         vm.prank(staker);
         vm.expectRevert(VayuEpochSettlement.ZeroAmount.selector);
         settlement.stakeFor(reporter, 0);
     }
 
+    // stakeFor is a state-mutating entry-point and must be blocked when paused.
     function test_revert_stakeFor_whenPaused() public {
         vm.prank(owner);
         settlement.pause();
@@ -514,6 +547,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
 
     // ── unstakeReporter ───────────────────────────────────────────────────────
 
+    // The requested amount must be moved from activeStake into pendingUnstake.
     function test_unstakeReporter_movesToPending() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -523,6 +557,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         assertEq(pending, MIN_REPORT);
     }
 
+    // withdrawableAt must be set to now + REPORTER_UNSTAKE_COOLDOWN.
     function test_unstakeReporter_setsCooldown() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -531,6 +566,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         assertEq(at, block.timestamp + REPORTER_UNSTAKE_COOLDOWN);
     }
 
+    // A reporter who staked for themselves must also be allowed to initiate unstake.
     function test_unstakeReporter_reporterCanUnstakeSelf() public {
         deal(address(token), reporter, MIN_REPORT);
         _stakeReporter(reporter, reporter, MIN_REPORT);
@@ -540,6 +576,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         assertEq(active, 0);
     }
 
+    // Only the registered staker or the reporter themselves may initiate an unstake.
     function test_revert_unstakeReporter_notStaker() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(fisherman); // not the staker or reporter
@@ -547,6 +584,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         settlement.unstakeReporter(reporter, MIN_REPORT);
     }
 
+    // Trying to unstake more than the active balance must revert.
     function test_revert_unstakeReporter_insufficientStake() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -554,6 +592,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         settlement.unstakeReporter(reporter, MIN_REPORT + 1);
     }
 
+    // Unstaking zero tokens is meaningless and must revert with ZeroAmount.
     function test_revert_unstakeReporter_zeroAmount() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -563,6 +602,8 @@ contract VES_ReporterStaking_Test is SettlementBase {
 
     // ── withdrawReporter ──────────────────────────────────────────────────────
 
+    // After the cooldown elapses the pending amount must be sent to the staker's
+    // wallet (the staker funded the stake, not the reporter).
     function test_withdrawReporter_transfersTokens() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -574,6 +615,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         assertEq(token.balanceOf(staker), before + MIN_REPORT);
     }
 
+    // pendingUnstake must be zeroed after a successful withdrawal.
     function test_withdrawReporter_clearsPending() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -585,6 +627,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         assertEq(pending, 0);
     }
 
+    // Calling withdraw when there is nothing pending must revert.
     function test_revert_withdrawReporter_noPending() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -592,6 +635,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         settlement.withdrawReporter(reporter);
     }
 
+    // Calling withdraw before the cooldown has elapsed must revert.
     function test_revert_withdrawReporter_cooldownNotElapsed() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -601,6 +645,7 @@ contract VES_ReporterStaking_Test is SettlementBase {
         settlement.withdrawReporter(reporter);
     }
 
+    // Only the original staker may withdraw — a third party must be rejected.
     function test_revert_withdrawReporter_notStaker() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         vm.prank(staker);
@@ -623,6 +668,8 @@ contract VES_CommitEpoch_Test is SettlementBase {
         _registerRelay(relay);
     }
 
+    // All EpochCommitment fields (roots, relay, committedAt, finalized, swept)
+    // must reflect exactly what was passed in.
     function test_commitEpoch_storesCommitment() public {
         bytes32 dr = keccak256("dataRoot");
         bytes32 rr = keccak256("rewardRoot");
@@ -637,6 +684,7 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertFalse(ec.swept);
     }
 
+    // The relay earns RELAY_FEE_BPS of the epoch budget immediately on commit.
     function test_commitEpoch_relayReceivesFee() public {
         uint256 budget = _epochBudget();
         uint256 fee    = (budget * VayuTypes.RELAY_FEE_BPS) / VayuTypes.BPS_DENOMINATOR;
@@ -645,6 +693,8 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertEq(token.balanceOf(relay), before + fee);
     }
 
+    // epochBalance must equal the budget minus the relay fee — this is the pool
+    // available for reporter reward claims.
     function test_commitEpoch_epochBalanceIsRewardBudget() public {
         uint256 budget = _epochBudget();
         uint256 fee    = (budget * VayuTypes.RELAY_FEE_BPS) / VayuTypes.BPS_DENOMINATOR;
@@ -652,6 +702,7 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertEq(settlement.epochBalance(EPOCH1), budget - fee);
     }
 
+    // An EpochCommitted event with all expected indexed and non-indexed fields must fire.
     function test_commitEpoch_emitsEvent() public {
         bytes32 dr = keccak256("dr");
         bytes32 rr = keccak256("rr");
@@ -662,6 +713,8 @@ contract VES_CommitEpoch_Test is SettlementBase {
         settlement.commitEpoch(EPOCH1, dr, rr, "ipfs://test", 1, 1, empty);
     }
 
+    // A reporter on the penalty list must be slashed SLASH_REPORTER_CONSECUTIVE_ZEROS
+    // bps of their active stake at commit time.
     function test_commitEpoch_penaltyList_slashesReporter() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         uint256 stakeBefore = settlement.reporterStake(reporter);
@@ -674,6 +727,8 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertEq(settlement.reporterStake(reporter), stakeBefore - expectedSlash);
     }
 
+    // penaltySlashed[epochId][reporter] must be set to true after the slash so the
+    // relay cannot slash the same reporter twice for the same epoch.
     function test_commitEpoch_penaltyList_setsPenaltySlashed() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         address[] memory penalty = new address[](1);
@@ -682,6 +737,8 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertTrue(settlement.penaltySlashed(EPOCH1, reporter));
     }
 
+    // A reporter appearing twice in the same penalty list must only be slashed once
+    // (the penaltySlashed flag guards against double-slash).
     function test_commitEpoch_penaltyList_duplicateEntry_slashedOnce() public {
         _stakeReporter(staker, reporter, MIN_REPORT);
         uint256 stakeBefore = settlement.reporterStake(reporter);
@@ -696,6 +753,8 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertEq(settlement.reporterStake(reporter), stakeBefore - expectedSlash);
     }
 
+    // A reporter with no active stake appearing in the penalty list must not revert
+    // — the slash is silently skipped.
     function test_commitEpoch_penaltyList_noStake_noSlash() public {
         // reporter2 has no stake — should not revert and penalty list just skips
         address[] memory penalty = new address[](1);
@@ -704,6 +763,7 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertEq(settlement.reporterStake(reporter2), 0);
     }
 
+    // Only active relays may commit epochs; any other caller must be rejected.
     function test_revert_commitEpoch_notActiveRelay() public {
         vm.prank(fisherman);
         vm.expectRevert(VayuEpochSettlement.NotActiveRelay.selector);
@@ -711,12 +771,14 @@ contract VES_CommitEpoch_Test is SettlementBase {
         settlement.commitEpoch(EPOCH1, bytes32(0), bytes32(0), "", 0, 0, empty);
     }
 
+    // An epoch that has already been committed cannot be committed again.
     function test_revert_commitEpoch_alreadyCommitted() public {
         _commitEpoch(relay, EPOCH1, bytes32(0), bytes32(0));
         vm.expectRevert(abi.encodeWithSelector(VayuEpochSettlement.EpochAlreadyCommitted.selector, EPOCH1));
         _commitEpoch(relay, EPOCH1, bytes32(0), bytes32(0));
     }
 
+    // commitEpoch is a state-mutating entry-point and must be blocked when paused.
     function test_revert_commitEpoch_whenPaused() public {
         vm.prank(owner);
         settlement.pause();
@@ -757,6 +819,7 @@ contract VES_ClaimReward_Test is SettlementBase {
         _pastChallengeWindow();
     }
 
+    // The claimed amount must be transferred to the reporter's wallet.
     function test_claimReward_transfersTokens() public {
         uint256 before = token.balanceOf(reporter);
         vm.prank(reporter);
@@ -764,6 +827,7 @@ contract VES_ClaimReward_Test is SettlementBase {
         assertEq(token.balanceOf(reporter), before + claimAmount);
     }
 
+    // The epoch's remaining balance must decrease by exactly the claimed amount.
     function test_claimReward_decreasesEpochBalance() public {
         uint256 before = settlement.epochBalance(claimEpoch);
         vm.prank(reporter);
@@ -771,6 +835,7 @@ contract VES_ClaimReward_Test is SettlementBase {
         assertEq(settlement.epochBalance(claimEpoch), before - claimAmount);
     }
 
+    // isClaimed must be false before and true after a successful claim.
     function test_claimReward_marksClaimed() public {
         assertFalse(settlement.isClaimed(claimEpoch, reporter, H3_RES8));
         vm.prank(reporter);
@@ -778,6 +843,7 @@ contract VES_ClaimReward_Test is SettlementBase {
         assertTrue(settlement.isClaimed(claimEpoch, reporter, H3_RES8));
     }
 
+    // A RewardClaimed event with all four fields must fire on success.
     function test_claimReward_emitsEvent() public {
         vm.prank(reporter);
         vm.expectEmit(true, true, true, true);
@@ -785,12 +851,15 @@ contract VES_ClaimReward_Test is SettlementBase {
         settlement.claimReward(claimEpoch, H3_RES8, claimAmount, claimProof);
     }
 
+    // Claiming against an epoch that was never committed must revert.
     function test_revert_claimReward_epochNotCommitted() public {
         vm.prank(reporter);
         vm.expectRevert(VayuEpochSettlement.EpochNotCommitted.selector);
         settlement.claimReward(99, H3_RES8, claimAmount, claimProof);
     }
 
+    // Claims are locked until the 12-hour challenge window closes; attempting
+    // earlier must revert with ChallengeWindowOpen.
     function test_revert_claimReward_challengeWindowOpen() public {
         // Deploy a fresh epoch and try to claim before window closes
         _commitEpoch(relay, EPOCH2, bytes32(0), rewardRoot);
@@ -799,6 +868,8 @@ contract VES_ClaimReward_Test is SettlementBase {
         settlement.claimReward(EPOCH2, H3_RES8, claimAmount, claimProof);
     }
 
+    // Once the 90-day claim expiry has passed the epoch can only be swept;
+    // individual claims must revert with ClaimExpired.
     function test_revert_claimReward_claimExpired() public {
         _pastClaimExpiry();
         vm.prank(reporter);
@@ -806,6 +877,7 @@ contract VES_ClaimReward_Test is SettlementBase {
         settlement.claimReward(claimEpoch, H3_RES8, claimAmount, claimProof);
     }
 
+    // A reporter who has already claimed their reward for a cell cannot claim again.
     function test_revert_claimReward_alreadyClaimed() public {
         vm.prank(reporter);
         settlement.claimReward(claimEpoch, H3_RES8, claimAmount, claimProof);
@@ -814,6 +886,7 @@ contract VES_ClaimReward_Test is SettlementBase {
         settlement.claimReward(claimEpoch, H3_RES8, claimAmount, claimProof);
     }
 
+    // A proof that does not verify against the stored rewardRoot must revert.
     function test_revert_claimReward_invalidProof() public {
         bytes32[] memory badProof = new bytes32[](1);
         badProof[0] = keccak256("wrong");
@@ -822,6 +895,7 @@ contract VES_ClaimReward_Test is SettlementBase {
         settlement.claimReward(claimEpoch, H3_RES8, claimAmount, badProof);
     }
 
+    // claimReward is a state-mutating entry-point and must be blocked when paused.
     function test_revert_claimReward_whenPaused() public {
         vm.prank(owner);
         settlement.pause();
@@ -843,6 +917,7 @@ contract VES_SweepExpired_Test is SettlementBase {
         _commitEpoch(relay, EPOCH1, bytes32(0), bytes32(0));
     }
 
+    // The entire remaining epoch balance must be transferred to the treasury.
     function test_sweepExpired_transfersBalanceToTreasury() public {
         uint256 balance = settlement.epochBalance(EPOCH1);
         uint256 before  = token.balanceOf(treasury);
@@ -851,12 +926,15 @@ contract VES_SweepExpired_Test is SettlementBase {
         assertEq(token.balanceOf(treasury), before + balance);
     }
 
+    // The swept flag on the EpochCommitment must be set to true.
     function test_sweepExpired_setsSweptFlag() public {
         _pastClaimExpiry();
         settlement.sweepExpired(EPOCH1);
         assertTrue(settlement.getEpochCommitment(EPOCH1).swept);
     }
 
+    // If every reward was claimed before expiry the epoch balance is 0;
+    // sweepExpired must succeed without transferring any tokens.
     function test_sweepExpired_zeroBalance_noTransfer() public {
         // Drain the epoch balance first via claim
         uint256 budget = _epochBudget();
@@ -880,6 +958,7 @@ contract VES_SweepExpired_Test is SettlementBase {
         assertEq(token.balanceOf(treasury), before); // nothing transferred
     }
 
+    // An EpochSwept event with the correct epoch and swept amount must fire.
     function test_sweepExpired_emitsEvent() public {
         uint256 balance = settlement.epochBalance(EPOCH1);
         _pastClaimExpiry();
@@ -888,16 +967,19 @@ contract VES_SweepExpired_Test is SettlementBase {
         settlement.sweepExpired(EPOCH1);
     }
 
+    // Sweeping an epoch that was never committed must revert.
     function test_revert_sweepExpired_epochNotCommitted() public {
         vm.expectRevert(VayuEpochSettlement.EpochNotCommitted.selector);
         settlement.sweepExpired(99);
     }
 
+    // Sweeping before the 90-day expiry has passed must revert.
     function test_revert_sweepExpired_epochNotExpired() public {
         vm.expectRevert(VayuEpochSettlement.EpochNotExpired.selector);
         settlement.sweepExpired(EPOCH1);
     }
 
+    // An epoch that has already been swept cannot be swept a second time.
     function test_revert_sweepExpired_alreadySwept() public {
         _pastClaimExpiry();
         settlement.sweepExpired(EPOCH1);
@@ -936,6 +1018,7 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         _commitEpoch(relay, EPOCH1, dataRoot, bytes32(0));
     }
 
+    // Reporter must be slashed SLASH_REPORTER_DUPLICATE_LOCATION bps of their stake.
     function test_challengeDuplicateLocation_slashesReporter() public {
         uint256 stakeBefore = settlement.reporterStake(reporter);
         uint256 expectedSlash = (stakeBefore * VayuTypes.SLASH_REPORTER_DUPLICATE_LOCATION) / VayuTypes.BPS_DENOMINATOR;
@@ -946,6 +1029,7 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         assertEq(settlement.reporterStake(reporter), stakeBefore - expectedSlash);
     }
 
+    // The fisherman must receive FISHERMAN_SHARE bps of the slashed amount as bounty.
     function test_challengeDuplicateLocation_fishermanReceivesBounty() public {
         uint256 stakeBefore  = settlement.reporterStake(reporter);
         uint256 slash        = (stakeBefore * VayuTypes.SLASH_REPORTER_DUPLICATE_LOCATION) / VayuTypes.BPS_DENOMINATOR;
@@ -957,6 +1041,7 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         assertEq(token.balanceOf(fisherman), before + bounty);
     }
 
+    // The treasury must receive the slash remainder (slash - bounty).
     function test_challengeDuplicateLocation_treasuryReceivesRemainder() public {
         uint256 stakeBefore  = settlement.reporterStake(reporter);
         uint256 slash        = (stakeBefore * VayuTypes.SLASH_REPORTER_DUPLICATE_LOCATION) / VayuTypes.BPS_DENOMINATOR;
@@ -968,6 +1053,7 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         assertEq(token.balanceOf(treasury), before + (slash - bounty));
     }
 
+    // ChallengeSubmitted and ChallengeResolved(success=true) must both fire.
     function test_challengeDuplicateLocation_emitsEvents() public {
         vm.prank(fisherman);
         vm.expectEmit(true, true, false, true);
@@ -977,6 +1063,7 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         settlement.challengeDuplicateLocation(EPOCH1, r1, proof1, r2, proof2);
     }
 
+    // The two readings must belong to the same reporter; different reporters reverts.
     function test_revert_challengeDuplicateLocation_sameReporter() public {
         // reading2 has a different reporter
         VayuTypes.AQIReading memory rx = r2;
@@ -986,6 +1073,7 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         settlement.challengeDuplicateLocation(EPOCH1, r1, proof1, rx, proof2);
     }
 
+    // The two readings must be from different H3 cells; identical h3Index reverts.
     function test_revert_challengeDuplicateLocation_sameCell() public {
         // Build two readings for the same cell — same reporter, same h3Index but
         // different AQI so the leaves are distinct — and commit them to EPOCH2.
@@ -1002,6 +1090,8 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         settlement.challengeDuplicateLocation(EPOCH2, ra, pa, rb, pb);
     }
 
+    // The epochId embedded in each reading must match the challenge epochId;
+    // a mismatch must revert with EpochMismatch.
     function test_revert_challengeDuplicateLocation_epochMismatch() public {
         // Build readings with EPOCH1 embedded in their leaves, commit them in
         // EPOCH2's dataRoot, then call challengeDuplicateLocation for EPOCH2.
@@ -1019,12 +1109,14 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         settlement.challengeDuplicateLocation(EPOCH2, ra, pa, rb, pb);
     }
 
+    // Challenging an epoch that was never committed must revert.
     function test_revert_challengeDuplicateLocation_epochNotCommitted() public {
         vm.prank(fisherman);
         vm.expectRevert(VayuEpochSettlement.EpochNotCommitted.selector);
         settlement.challengeDuplicateLocation(99, r1, proof1, r2, proof2);
     }
 
+    // Challenges may only be submitted within the 12-hour window; after that it reverts.
     function test_revert_challengeDuplicateLocation_windowClosed() public {
         vm.warp(block.timestamp + CHALLENGE_WINDOW + 1);
         vm.prank(fisherman);
@@ -1032,6 +1124,7 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         settlement.challengeDuplicateLocation(EPOCH1, r1, proof1, r2, proof2);
     }
 
+    // A proof that does not verify against the epoch dataRoot must revert.
     function test_revert_challengeDuplicateLocation_invalidProof() public {
         bytes32[] memory bad = new bytes32[](1);
         bad[0] = keccak256("bad");
@@ -1040,6 +1133,8 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         settlement.challengeDuplicateLocation(EPOCH1, r1, bad, r2, proof2);
     }
 
+    // A reporter with no stake can still be challenged; the slash is silently
+    // skipped and no tokens are disbursed to the fisherman.
     function test_challengeDuplicateLocation_noStake_noSlash() public {
         // reporter2 has no stake — challenge should not revert, just skips slash.
         // Readings must embed EPOCH2 so epochId matches the function call.
@@ -1103,6 +1198,8 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
         _commitEpoch(relay, EPOCH1, dataRoot4, bytes32(0));
     }
 
+    // The reporter who submitted the anomalous cell reading must be slashed
+    // SLASH_REPORTER_FISHERMAN bps.
     function test_challengeSpatialAnomaly_slashesReporter() public {
         uint256 stakeBefore = settlement.reporterStake(reporter);
         uint256 expectedSlash = (stakeBefore * VayuTypes.SLASH_REPORTER_FISHERMAN) / VayuTypes.BPS_DENOMINATOR;
@@ -1125,6 +1222,7 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
         assertEq(settlement.reporterStake(reporter), stakeBefore - expectedSlash);
     }
 
+    // Passing an empty cell or neighbour array must revert with EmptyArray.
     function test_revert_challengeSpatialAnomaly_emptyArray() public {
         VayuTypes.AQIReading[] memory empty = new VayuTypes.AQIReading[](0);
         VayuTypes.AQIReading[] memory cells  = new VayuTypes.AQIReading[](1);
@@ -1138,6 +1236,8 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
         settlement.challengeSpatialAnomaly(EPOCH1, H3_RES8, empty, emptyProofs, cells, cp);
     }
 
+    // If the AQI difference between cell and neighbours is within SPATIAL_TOLERANCE_AQI
+    // the challenge must be rejected with NotAnomaly.
     function test_revert_challengeSpatialAnomaly_notAnomaly() public {
         // AQI difference within tolerance — not a valid anomaly
         VayuTypes.AQIReading memory nonAnomCell  = _readingAQI(reporter, EPOCH1, H3_RES8,     100);
@@ -1162,6 +1262,7 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
         settlement.challengeSpatialAnomaly(EPOCH2, H3_RES8, cells, cp, neighs, np);
     }
 
+    // Spatial anomaly challenges are only valid within the 12-hour window.
     function test_revert_challengeSpatialAnomaly_windowClosed() public {
         vm.warp(block.timestamp + CHALLENGE_WINDOW + 1);
         VayuTypes.AQIReading[] memory cells  = new VayuTypes.AQIReading[](1);
@@ -1209,6 +1310,7 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
         claimedAmounts[0] = 1000;
     }
 
+    // The relay must be slashed SLASH_RELAY_REWARD_COMPUTATION bps of their stake.
     function test_challengeRewardComputation_slashesRelay() public {
         uint256 stakeBefore = settlement.relayStake(relay);
         uint256 expectedSlash = (stakeBefore * VayuTypes.SLASH_RELAY_REWARD_COMPUTATION) / VayuTypes.BPS_DENOMINATOR;
@@ -1222,6 +1324,7 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
         assertEq(settlement.relayStake(relay), stakeBefore - expectedSlash);
     }
 
+    // The fisherman must receive FISHERMAN_SHARE bps of the relay slash as bounty.
     function test_challengeRewardComputation_fishermanReceivesBounty() public {
         uint256 stakeBefore = settlement.relayStake(relay);
         uint256 slash  = (stakeBefore * VayuTypes.SLASH_RELAY_REWARD_COMPUTATION) / VayuTypes.BPS_DENOMINATOR;
@@ -1236,6 +1339,8 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
         assertEq(token.balanceOf(fisherman), before + bounty);
     }
 
+    // If the relay's remaining stake falls below MIN_RELAY after the slash it must
+    // be deactivated immediately (MIN_RELAY=10k, slash 30% → 7k < min).
     function test_challengeRewardComputation_deactivatesRelay_whenBelowMin() public {
         // Use a relay with just-above minimum stake, slash 30% → falls below
         VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
@@ -1248,6 +1353,7 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
         assertFalse(settlement.isActiveRelay(relay));
     }
 
+    // Reward computation challenges are only valid within the 12-hour window.
     function test_revert_challengeRewardComputation_windowClosed() public {
         vm.warp(block.timestamp + CHALLENGE_WINDOW + 1);
         VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
@@ -1257,6 +1363,7 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
         settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts);
     }
 
+    // A proof that does not verify against the epoch dataRoot must revert.
     function test_revert_challengeRewardComputation_invalidProof() public {
         bytes32[][] memory bad = new bytes32[][](1);
         bad[0] = new bytes32[](1);
@@ -1306,6 +1413,8 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         _commitEpochWithPenalty(relay, PENALTY_EPOCH, bytes32(0), bytes32(0), penalty);
     }
 
+    // A successful challenge must clear penaltySlashed[penaltyEpochId][reporter],
+    // restoring the reporter's ability to be penalised again in a future epoch.
     function test_challengePenaltyList_clearsPenaltySlashed() public {
         assertTrue(settlement.penaltySlashed(PENALTY_EPOCH, reporter));
         vm.prank(fisherman);
@@ -1313,6 +1422,8 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         assertFalse(settlement.penaltySlashed(PENALTY_EPOCH, reporter));
     }
 
+    // The relay that submitted the fraudulent penalty list must be slashed
+    // SLASH_RELAY_PENALTY_LIST bps of their active stake.
     function test_challengePenaltyList_slashesRelay() public {
         uint256 stakeBefore = settlement.relayStake(relay);
         uint256 expectedSlash = (stakeBefore * VayuTypes.SLASH_RELAY_PENALTY_LIST) / VayuTypes.BPS_DENOMINATOR;
@@ -1323,6 +1434,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         assertEq(settlement.relayStake(relay), stakeBefore - expectedSlash);
     }
 
+    // The fisherman must receive FISHERMAN_SHARE of the relay's slashed stake.
     function test_challengePenaltyList_fishermanReceivesBounty() public {
         uint256 stakeBefore = settlement.relayStake(relay);
         uint256 slash  = (stakeBefore * VayuTypes.SLASH_RELAY_PENALTY_LIST) / VayuTypes.BPS_DENOMINATOR;
@@ -1334,6 +1446,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         assertEq(token.balanceOf(fisherman), before + bounty);
     }
 
+    // If the relay's post-slash stake drops below MIN_RELAY it must be deactivated.
     function test_challengePenaltyList_deactivatesRelay_whenBelowMin() public {
         vm.prank(fisherman);
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter, PROOF_EPOCH, proofReading, merkleProof);
@@ -1341,6 +1454,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         assertFalse(settlement.isActiveRelay(relay));
     }
 
+    // ChallengeSubmitted and ChallengeResolved(success=true) must both fire in order.
     function test_challengePenaltyList_emitsEvents() public {
         vm.prank(fisherman);
         vm.expectEmit(true, true, false, true);
@@ -1350,6 +1464,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter, PROOF_EPOCH, proofReading, merkleProof);
     }
 
+    // proofReading.reporter must equal the target reporter argument; mismatch reverts.
     function test_revert_challengePenaltyList_reporterMismatch() public {
         VayuTypes.AQIReading memory wrong = proofReading;
         wrong.reporter = reporter2;
@@ -1358,6 +1473,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter, PROOF_EPOCH, wrong, merkleProof);
     }
 
+    // proofReading.epochId must equal proofEpochId; a mismatch reverts.
     function test_revert_challengePenaltyList_epochMismatch() public {
         VayuTypes.AQIReading memory wrong = proofReading;
         wrong.epochId = PROOF_EPOCH + 1; // reading epochId doesn't match proofEpochId
@@ -1366,6 +1482,8 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter, PROOF_EPOCH, wrong, merkleProof);
     }
 
+    // proofEpochId must be > penaltyEpochId - PENALTY_PROOF_EPOCH_THRESHOLD;
+    // epoch 0 is before this floor and must revert with ProofEpochOutOfRange.
     function test_revert_challengePenaltyList_proofEpochOutOfRange_tooEarly() public {
         // proofEpochId must be > windowStart = penaltyEpochId - threshold = 5 - 10 = 0
         // epoch 0 is exactly at or before windowStart.
@@ -1377,6 +1495,8 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter, 0, pr0, merkleProof);
     }
 
+    // proofEpochId must not exceed penaltyEpochId; a later epoch reverts with
+    // ProofEpochOutOfRange.
     function test_revert_challengePenaltyList_proofEpochOutOfRange_tooLate() public {
         // proofEpochId must be <= penaltyEpochId.
         // proofReading.epochId must equal proofEpochId so the epoch-mismatch
@@ -1387,6 +1507,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter, PENALTY_EPOCH + 1, prLate, merkleProof);
     }
 
+    // A reporter who was not included in the penalty list cannot be challenged.
     function test_revert_challengePenaltyList_reporterNotPenalized() public {
         // reporter2 was never on the penalty list.
         // proofReading.reporter must equal reporter2 so the reporter-mismatch check
@@ -1397,6 +1518,8 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter2, PROOF_EPOCH, pr2, merkleProof);
     }
 
+    // The proof epoch must be a committed epoch with a data root;
+    // an uncommitted proof epoch must revert.
     function test_revert_challengePenaltyList_proofEpochNotCommitted() public {
         // proofEpochId=3 is in range (0 < 3 <= 5) but epoch 3 was never committed.
         // proofReading.epochId must equal 3 so the epoch-mismatch check passes
@@ -1407,6 +1530,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter, 3, pr3, merkleProof);
     }
 
+    // Penalty list challenges are only valid within the 12-hour window.
     function test_revert_challengePenaltyList_windowClosed() public {
         vm.warp(block.timestamp + CHALLENGE_WINDOW + 1);
         vm.prank(fisherman);
@@ -1414,6 +1538,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
         settlement.challengePenaltyList(PENALTY_EPOCH, reporter, PROOF_EPOCH, proofReading, merkleProof);
     }
 
+    // A proof that does not verify against the proof epoch's dataRoot must revert.
     function test_revert_challengePenaltyList_invalidProof() public {
         bytes32[] memory bad = new bytes32[](1);
         bad[0] = keccak256("bad");
@@ -1429,6 +1554,7 @@ contract VES_ChallengePenaltyList_Test is SettlementBase {
 
 contract VES_Admin_Test is SettlementBase {
 
+    // The new treasury address must be stored and readable via treasury().
     function test_setTreasury_updatesAddress() public {
         address newTreasury = makeAddr("newTreasury");
         vm.prank(owner);
@@ -1436,6 +1562,7 @@ contract VES_Admin_Test is SettlementBase {
         assertEq(settlement.treasury(), newTreasury);
     }
 
+    // A TreasuryUpdated event with both old and new addresses must fire.
     function test_setTreasury_emitsEvent() public {
         address newTreasury = makeAddr("newTreasury");
         vm.prank(owner);
@@ -1444,24 +1571,28 @@ contract VES_Admin_Test is SettlementBase {
         settlement.setTreasury(newTreasury);
     }
 
+    // Setting the treasury to address(0) must revert with ZeroAddress.
     function test_revert_setTreasury_zeroAddress() public {
         vm.prank(owner);
         vm.expectRevert(VayuEpochSettlement.ZeroAddress.selector);
         settlement.setTreasury(address(0));
     }
 
+    // Only the owner may update the treasury; any other caller must revert.
     function test_revert_setTreasury_notOwner() public {
         vm.prank(fisherman);
         vm.expectRevert();
         settlement.setTreasury(makeAddr("x"));
     }
 
+    // After pause(), paused() must return true.
     function test_pause_pausesContract() public {
         vm.prank(owner);
         settlement.pause();
         assertTrue(settlement.paused());
     }
 
+    // After unpause(), paused() must return false.
     function test_unpause_unpausesContract() public {
         vm.prank(owner);
         settlement.pause();
@@ -1470,12 +1601,14 @@ contract VES_Admin_Test is SettlementBase {
         assertFalse(settlement.paused());
     }
 
+    // Only the owner may pause the contract; any other caller must revert.
     function test_revert_pause_notOwner() public {
         vm.prank(fisherman);
         vm.expectRevert();
         settlement.pause();
     }
 
+    // Only the owner may unpause the contract; any other caller must revert.
     function test_revert_unpause_notOwner() public {
         vm.prank(owner);
         settlement.pause();
