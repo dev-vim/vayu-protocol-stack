@@ -583,6 +583,12 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (relayInfo[msg.sender].active) revert RelayAlreadyRegistered();
         if (relayInfo[msg.sender].pendingUnstake > 0) revert PendingWithdrawalExists();
 
+        // A relay that was force-deactivated by a slash may still have residual
+        // stake sitting in the contract.  Credit it toward MIN_RELAY_STAKE so
+        // those tokens are not orphaned; only pull the shortfall from the wallet.
+        uint256 existing = relayInfo[msg.sender].stake;
+        uint256 topUp    = existing < MIN_RELAY_STAKE ? MIN_RELAY_STAKE - existing : 0;
+
         relayInfo[msg.sender] = RelayInfo({
             stake: MIN_RELAY_STAKE,
             active: true,
@@ -590,7 +596,9 @@ contract VayuEpochSettlement is Ownable, Pausable {
             withdrawableAt: 0
         });
 
-        TOKEN.safeTransferFrom(msg.sender, address(this), MIN_RELAY_STAKE);
+        if (topUp > 0) {
+            TOKEN.safeTransferFrom(msg.sender, address(this), topUp);
+        }
 
         emit RelayRegistered(msg.sender, MIN_RELAY_STAKE);
     }

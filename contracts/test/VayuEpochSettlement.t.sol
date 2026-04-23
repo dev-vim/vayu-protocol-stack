@@ -250,6 +250,29 @@ contract SettlementBase is Test {
     function _epochBudget() internal view returns (uint256) {
         return rewards.EPOCH_BUDGET();
     }
+
+    /// @dev Register `r`, commit one epoch, then slash `r` below MIN_RELAY via
+    ///      challengeRewardComputation so that the contract force-deactivates it.
+    ///      `r` is left with active=false, stake<MIN_RELAY, pendingUnstake=0.
+    function _slashRelayBelowMin(address r, uint32 epochId) internal {
+        VayuTypes.AQIReading memory rd = _reading(reporter, epochId, H3_RES8);
+        bytes32 leaf     = VayuTypes.dataLeaf(rd);
+        bytes32 dataRoot = MerkleHelper.root1(leaf);
+        _commitEpoch(r, epochId, dataRoot, bytes32(0));
+
+        VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
+        cells[0] = rd;
+        bytes32[][] memory proofs = new bytes32[][](1);
+        proofs[0] = new bytes32[](0); // empty proof for single-leaf tree
+
+        address[] memory claimedReps = new address[](1);
+        claimedReps[0] = reporter;
+        uint256[] memory claimedAmts = new uint256[](1);
+        claimedAmts[0] = 1000;
+
+        vm.prank(fisherman);
+        settlement.challengeRewardComputation(epochId, H3_RES8, cells, proofs, claimedReps, claimedAmts);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -378,6 +401,44 @@ contract VES_RelayStaking_Test is SettlementBase {
         vm.expectRevert();
         settlement.registerRelay();
         vm.stopPrank();
+    }
+
+    // A relay force-deactivated by a slash below MIN_RELAY (pendingUnstake==0)
+    // must be allowed to re-register immediately by depositing a fresh MIN_RELAY.
+    function test_registerRelay_afterSlashDeactivation_succeeds() public {
+        _registerRelay(relay);
+        _slashRelayBelowMin(relay, EPOCH1);
+        assertFalse(settlement.isActiveRelay(relay)); // confirm deactivated state
+
+        vm.startPrank(relay);
+        token.approve(address(settlement), MIN_RELAY);
+        settlement.registerRelay();
+        vm.stopPrank();
+
+        assertTrue(settlement.isActiveRelay(relay));
+    }
+
+    // The residual stake left after a slash-deactivation is credited toward the
+    // new MIN_RELAY — the relay only tops up the shortfall, not the full amount.
+    function test_registerRelay_afterSlashDeactivation_creditsResidualStake() public {
+        _registerRelay(relay);
+        _slashRelayBelowMin(relay, EPOCH1);
+        uint256 residual = settlement.relayStake(relay);
+        assertGt(residual, 0);
+        assertLt(residual, MIN_RELAY);
+
+        uint256 topUp    = MIN_RELAY - residual;
+        uint256 walletBefore = token.balanceOf(relay);
+
+        vm.startPrank(relay);
+        token.approve(address(settlement), topUp);
+        settlement.registerRelay();
+        vm.stopPrank();
+
+        // Only the shortfall was pulled from the wallet
+        assertEq(token.balanceOf(relay), walletBefore - topUp);
+        // New stake is exactly MIN_RELAY
+        assertEq(settlement.relayStake(relay), MIN_RELAY);
     }
 
     // ── deregisterRelay ───────────────────────────────────────────────────────
