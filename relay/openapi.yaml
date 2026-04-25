@@ -1,35 +1,28 @@
 openapi: 3.1.0
 info:
   title: Vayu Relay API
-  version: 1.0.0
+  version: 1.1.0
   description: |
-    REST API for the Vayu AQI protocol relay server.
+    REST API for the Vayu relay write path.
 
-    The relay is the off-chain component that sits between edge devices (reporters)
-    and the on-chain settlement contract. It:
+    Relay scope is intentionally minimal:
 
-    1. **Ingests** — Accepts signed AQI readings from edge devices
-    2. **Validates** — Verifies EIP-712 signatures and reporter stake
-    3. **Aggregates** — At epoch boundaries, computes per-cell medians, scores, and rewards
-    4. **Commits** — Builds Merkle trees, pins epoch blob to IPFS, calls `commitEpoch()` on-chain
-    5. **Serves** — Provides Merkle proofs so reporters can claim rewards, and epoch data for fishermen
+    1. Ingests signed AQI readings from reporters
+    2. Validates signatures and reporter stake
+    3. Runs epoch aggregation and writes commits on-chain
+
+    Read/query endpoints are out of scope for relay and belong to the indexer API.
 
     ### Authentication
-    There is no API key or bearer token. Reporter identity is established cryptographically
-    via the EIP-712 signature included in each reading submission.
+    There is no API key or bearer token. Reporter identity is established
+    cryptographically via the EIP-712 signature included in each reading.
 
     ### Epoch Cadence
-    1 epoch = 1 hour. The relay collects readings during each epoch window and commits
-    results shortly after the epoch closes.
+    1 epoch = 1 hour. The relay collects readings during each epoch window and
+    commits results shortly after the epoch closes.
 
     ### Versioning
-    All endpoints are prefixed with `/v1`. Breaking changes will use `/v2`.
-
-  contact:
-    name: Vayu Protocol
-  license:
-    name: MIT
-    identifier: MIT
+    All endpoints are prefixed with /v1.
 
 servers:
   - url: http://localhost:3000/v1
@@ -42,44 +35,26 @@ servers:
 tags:
   - name: Readings
     description: Submit AQI readings from edge devices
-  - name: Epochs
-    description: Query epoch commitments, data, and Merkle proofs
-  - name: Reporters
-    description: Reporter profile and reward information
   - name: Health
     description: Relay operational status
 
 paths:
-  # ─────────────────────────────────────────────────────────────────────────────
-  # READINGS
-  # ─────────────────────────────────────────────────────────────────────────────
-
   /readings:
     post:
       operationId: submitReading
       tags: [Readings]
       summary: Submit a signed AQI reading
       description: |
-        Called by edge devices to submit a single AQI reading. The reading must
-        be signed with the reporter's private key using EIP-712 typed data signing.
+        Called by edge devices to submit a single AQI reading.
 
-        **Device flow:**
-        1. Read sensor → compute AQI from raw values
-        2. Determine H3 cell index from GPS coordinates
-        3. Build the `AQIReading` struct and sign it (EIP-712)
-        4. POST to this endpoint
-
-        **Relay validation (in order):**
-        1. Schema validation — all required fields present and within range
-        2. Signature verification — `ecrecover(eip712Hash, signature) == reporter`
-        3. Stake check — `reporterStake(reporter) > 0` (cached from contract events)
-        4. Timestamp freshness — within current epoch ± tolerance (5 minutes)
-        5. H3 resolution — must be resolution 8
-        6. Rate limiting — max 1 reading per reporter per 5 minutes
-        7. Mandatory field check — `aqi > 0` and `pm25 > 0`
-
-        The relay responds immediately. The reading is buffered for the current
-        epoch and included in the next `commitEpoch()` transaction.
+        Relay validation (in order):
+        1. Schema validation
+        2. Signature verification (EIP-712)
+        3. Stake check (reporterStake(reporter) > 0)
+        4. Timestamp freshness (within current epoch tolerance)
+        5. H3 resolution check (must be resolution 8)
+        6. Rate limiting (max 1 reading per reporter per 5 minutes)
+        7. Mandatory field checks (aqi > 0 and pm25 > 0)
 
       requestBody:
         required: true
@@ -87,19 +62,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ReadingSubmission"
-            example:
-              reporter: "0xAbC1234567890aBcDeF1234567890AbCdEf123456"
-              h3Index: "0x0882830a1fffffff"
-              aqi: 148
-              pm25: 453
-              pm10: 821
-              o3: 0
-              no2: 0
-              so2: 0
-              co: 0
-              timestamp: 1743954800
-              signature: "0x1234abcd...65-byte-hex-ecdsa-signature"
-
       responses:
         "200":
           description: Reading accepted and queued for the current epoch
@@ -107,314 +69,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReadingAccepted"
-              example:
-                status: accepted
-                epochId: 500
-                receivedAt: 1743954802
         "400":
           description: Validation failed (schema, signature, or mandatory fields)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-              examples:
-                invalidSignature:
-                  summary: Signature does not match reporter
-                  value:
-                    error: invalid_signature
-                    message: "ecrecover result does not match reporter address"
-                missingField:
-                  summary: Required field missing or zero
-                  value:
-                    error: missing_field
-                    message: "pm25 must be > 0"
-                badH3:
-                  summary: Invalid H3 resolution
-                  value:
-                    error: invalid_h3
-                    message: "h3Index must be resolution 8"
         "401":
           description: Reporter has no active stake
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-              example:
-                error: not_staked
-                message: "reporter 0xAbC...456 has no active stake"
         "429":
-          description: Rate limited — too many readings from this reporter
+          description: Rate limited
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-              example:
-                error: rate_limited
-                message: "max 1 reading per 5 minutes per reporter"
-                retryAfter: 180
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # EPOCHS
-  # ─────────────────────────────────────────────────────────────────────────────
-
-  /epochs/current:
-    get:
-      operationId: getCurrentEpoch
-      tags: [Epochs]
-      summary: Get the current epoch info
-      description: |
-        Returns the current epoch ID, its start/end timestamps, and the number
-        of readings collected so far. Useful for devices to determine which
-        epoch their reading belongs to, and for dashboards to show live status.
-
-      responses:
-        "200":
-          description: Current epoch information
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CurrentEpoch"
-              example:
-                epochId: 501
-                startTime: 1743955200
-                endTime: 1743958800
-                readingsCollected: 47
-                activeCells: 8
-
-  /epochs/{epochId}:
-    get:
-      operationId: getEpoch
-      tags: [Epochs]
-      summary: Get a committed epoch's metadata
-      description: |
-        Returns the on-chain commitment details and off-chain summary for a
-        previously committed epoch. Includes Merkle roots, IPFS CID, and
-        aggregate statistics.
-
-        For epochs that haven't been committed yet (future or in-progress),
-        returns 404.
-
-      parameters:
-        - $ref: "#/components/parameters/EpochId"
-
-      responses:
-        "200":
-          description: Epoch commitment data
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EpochDetail"
-              example:
-                epochId: 500
-                dataRoot: "0xaabb...32bytes"
-                rewardRoot: "0xccdd...32bytes"
-                ipfsCid: "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oc..."
-                relay: "0xRelayAddress..."
-                committedAt: 1743958900
-                activeCells: 12
-                totalReadings: 156
-                totalRewardDistributed: "68500000000000000000"
-                challengeWindowEnd: 1744001700
-                finalized: true
-        "404":
-          description: Epoch not found (not committed yet or invalid ID)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /epochs/{epochId}/cells:
-    get:
-      operationId: getEpochCells
-      tags: [Epochs]
-      summary: List all active cells for an epoch
-      description: |
-        Returns per-cell aggregates for a committed epoch: median AQI,
-        reporter count, and cell reward budget. Used by dashboards and
-        fishermen to inspect epoch data without downloading the full IPFS blob.
-
-      parameters:
-        - $ref: "#/components/parameters/EpochId"
-
-      responses:
-        "200":
-          description: List of active cells with their aggregates
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  epochId:
-                    type: integer
-                  cells:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/CellAggregate"
-              example:
-                epochId: 500
-                cells:
-                  - h3Index: "0x0882830a1fffffff"
-                    medianAqi: 150
-                    reporterCount: 5
-                    cellBudget: "6850000000000000000"
-                  - h3Index: "0x0882830b2fffffff"
-                    medianAqi: 88
-                    reporterCount: 3
-                    cellBudget: "6850000000000000000"
-        "404":
-          description: Epoch not committed yet
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /epochs/{epochId}/proofs/{reporter}:
-    get:
-      operationId: getRewardProof
-      tags: [Epochs]
-      summary: Get a reporter's Merkle reward proof for an epoch
-      description: |
-        Returns the Merkle proof and leaf data needed for a reporter to call
-        `claimReward()` on the settlement contract.
-
-        The response includes the reward amount, cell ID, and the proof array.
-        The reporter (or any address on their behalf) submits these values
-        to the contract to claim tokens.
-
-        Only available after the epoch has been committed. Returns 404 if the
-        reporter has no reward in this epoch (e.g., scored 0 or wasn't active).
-
-      parameters:
-        - $ref: "#/components/parameters/EpochId"
-        - name: reporter
-          in: path
-          required: true
-          description: Reporter Ethereum address (0x-prefixed, checksummed or lowercase)
-          schema:
-            type: string
-            pattern: "^0x[0-9a-fA-F]{40}$"
-
-      responses:
-        "200":
-          description: Reward proof data ready for on-chain claim
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RewardProof"
-              example:
-                epochId: 500
-                reporter: "0xAbC1234567890aBcDeF1234567890AbCdEf123456"
-                h3Index: "0x0882830a1fffffff"
-                amount: "3560000000000000000"
-                proof:
-                  - "0xaaaa...32bytes"
-                  - "0xbbbb...32bytes"
-                  - "0xcccc...32bytes"
-                leafIndex: 2
-        "404":
-          description: No reward for this reporter in this epoch
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example:
-                error: no_reward
-                message: "reporter 0xAbC...456 has no reward in epoch 500"
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # REPORTERS
-  # ─────────────────────────────────────────────────────────────────────────────
-
-  /reporters/{reporter}:
-    get:
-      operationId: getReporter
-      tags: [Reporters]
-      summary: Get a reporter's profile and stats
-      description: |
-        Returns cached information about a reporter: current stake, lifetime
-        readings, average score, unclaimed rewards, and recent epoch history.
-        Data is sourced from the relay's local cache of on-chain events and
-        submitted readings.
-
-      parameters:
-        - name: reporter
-          in: path
-          required: true
-          description: Reporter Ethereum address
-          schema:
-            type: string
-            pattern: "^0x[0-9a-fA-F]{40}$"
-
-      responses:
-        "200":
-          description: Reporter profile
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReporterProfile"
-              example:
-                reporter: "0xAbC1234567890aBcDeF1234567890AbCdEf123456"
-                stake: "200000000000000000000"
-                totalReadings: 1420
-                avgScore: 0.847
-                totalRewardsEarned: "4820000000000000000000"
-                consecutiveZeroEpochs: 0
-                lastActiveEpoch: 500
-                activeSinceEpoch: 12
-        "404":
-          description: Reporter not found (never submitted a reading)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /reporters/{reporter}/rewards:
-    get:
-      operationId: getReporterRewards
-      tags: [Reporters]
-      summary: List a reporter's unclaimed rewards
-      description: |
-        Returns all epochs where this reporter has unclaimed rewards,
-        along with the proof data needed to claim each one. Useful for
-        building a "claim all" UI or monitoring unclaimed balances.
-
-      parameters:
-        - name: reporter
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: "^0x[0-9a-fA-F]{40}$"
-        - name: status
-          in: query
-          required: false
-          description: Filter by claim status
-          schema:
-            type: string
-            enum: [unclaimed, claimed, expired, all]
-            default: unclaimed
-
-      responses:
-        "200":
-          description: List of reward entries
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  reporter:
-                    type: string
-                  rewards:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/RewardEntry"
-                  totalUnclaimed:
-                    type: string
-                    description: Sum of unclaimed rewards in token wei
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # HEALTH
-  # ─────────────────────────────────────────────────────────────────────────────
 
   /health:
     get:
@@ -422,9 +94,8 @@ paths:
       tags: [Health]
       summary: Relay health check
       description: |
-        Returns the relay's operational status, current epoch, chain connection
-        health, and IPFS connectivity. Used for monitoring and uptime checks.
-
+        Returns relay liveness and write-path dependency status
+        (chain connectivity and commit worker availability).
       responses:
         "200":
           description: Relay is healthy
@@ -432,49 +103,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-              example:
-                status: healthy
-                version: "1.0.0"
-                currentEpochId: 501
-                chainId: 8453
-                blockNumber: 12345678
-                ipfsConnected: true
-                lastCommittedEpoch: 500
-                lastCommitTxHash: "0xdeadbeef...64hex"
-                uptimeSeconds: 86400
         "503":
-          description: Relay is unhealthy (chain disconnected, IPFS down, etc.)
+          description: Relay is unhealthy
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# COMPONENTS
-# ═══════════════════════════════════════════════════════════════════════════════
-
 components:
-  parameters:
-    EpochId:
-      name: epochId
-      in: path
-      required: true
-      description: Monotonically increasing epoch counter (1 epoch = 1 hour)
-      schema:
-        type: integer
-        format: uint32
-        minimum: 1
-
   schemas:
-
-    # ─── Request Schemas ──────────────────────────────────────────────────────
-
     ReadingSubmission:
       type: object
-      description: |
-        A signed AQI reading from an edge device.
-        Maps directly to the `AQIReading` EIP-712 struct in VayuTypes.sol.
-        All numeric pollutant values are integers (µg/m³ × 10 for one decimal).
       required:
         - reporter
         - h3Index
@@ -490,69 +129,55 @@ components:
         h3Index:
           type: string
           pattern: "^0x[0-9a-fA-F]{16}$"
-          description: |
-            H3 cell index at resolution 8 as a hex-encoded uint64.
-            The relay validates the resolution nibble (bits 52-55 == 0x8).
+          description: H3 cell index at resolution 8 encoded as uint64 hex
         aqi:
           type: integer
           format: uint16
           minimum: 1
           maximum: 500
-          description: Composite AQI value (0-500 scale). MANDATORY, must be > 0.
         pm25:
           type: integer
           format: uint16
           minimum: 1
           maximum: 65535
-          description: PM2.5 in µg/m³ × 10 (e.g. 45.3 → 453). MANDATORY, must be > 0.
         pm10:
           type: integer
           format: uint16
           minimum: 0
           maximum: 65535
           default: 0
-          description: PM10 in µg/m³ × 10. 0 = not measured.
         o3:
           type: integer
           format: uint16
           minimum: 0
           maximum: 65535
           default: 0
-          description: Ozone (O₃) in µg/m³ × 10. 0 = not measured.
         no2:
           type: integer
           format: uint16
           minimum: 0
           maximum: 65535
           default: 0
-          description: NO₂ in µg/m³ × 10. 0 = not measured.
         so2:
           type: integer
           format: uint16
           minimum: 0
           maximum: 65535
           default: 0
-          description: SO₂ in µg/m³ × 10. 0 = not measured.
         co:
           type: integer
           format: uint16
           minimum: 0
           maximum: 65535
           default: 0
-          description: CO in mg/m³ × 10. 0 = not measured.
         timestamp:
           type: integer
           format: uint32
-          description: UNIX timestamp of the sensor reading (seconds since epoch)
+          description: UNIX timestamp of the sensor reading
         signature:
           type: string
           pattern: "^0x[0-9a-fA-F]{130}$"
-          description: |
-            EIP-712 ECDSA signature (65 bytes = r(32) + s(32) + v(1), hex-encoded
-            with 0x prefix → 132 chars). Produced by signing the AQIReading struct
-            with the reporter's private key.
-
-    # ─── Response Schemas ─────────────────────────────────────────────────────
+          description: 65-byte EIP-712 ECDSA signature
 
     ReadingAccepted:
       type: object
@@ -563,164 +188,9 @@ components:
         epochId:
           type: integer
           format: uint32
-          description: The epoch this reading was assigned to
         receivedAt:
           type: integer
           format: uint32
-          description: Server UNIX timestamp when the reading was accepted
-
-    CurrentEpoch:
-      type: object
-      properties:
-        epochId:
-          type: integer
-          format: uint32
-        startTime:
-          type: integer
-          format: uint32
-          description: UNIX timestamp of epoch start
-        endTime:
-          type: integer
-          format: uint32
-          description: UNIX timestamp of epoch end
-        readingsCollected:
-          type: integer
-          description: Readings received so far in this epoch
-        activeCells:
-          type: integer
-          description: Cells with >= 1 reading so far (not yet filtered by MIN_REPORTERS)
-
-    EpochDetail:
-      type: object
-      properties:
-        epochId:
-          type: integer
-          format: uint32
-        dataRoot:
-          type: string
-          description: Merkle root of the data tree (32 bytes, 0x-prefixed)
-        rewardRoot:
-          type: string
-          description: Merkle root of the reward tree (32 bytes, 0x-prefixed)
-        ipfsCid:
-          type: string
-          description: IPFS CID of the full epoch blob
-        relay:
-          type: string
-          description: Address of the relay that committed this epoch
-        committedAt:
-          type: integer
-          description: UNIX timestamp of the commitEpoch transaction
-        activeCells:
-          type: integer
-        totalReadings:
-          type: integer
-        totalRewardDistributed:
-          type: string
-          description: Total tokens distributed in this epoch (wei string)
-        challengeWindowEnd:
-          type: integer
-          description: UNIX timestamp when the 12-hour challenge window closes
-        finalized:
-          type: boolean
-          description: True if challenge window has passed with no successful challenge
-
-    CellAggregate:
-      type: object
-      properties:
-        h3Index:
-          type: string
-          description: H3 cell index (hex-encoded uint64)
-        medianAqi:
-          type: integer
-          description: Computed median AQI for this cell in this epoch
-        reporterCount:
-          type: integer
-          description: Number of reporters that submitted readings to this cell
-        cellBudget:
-          type: string
-          description: Token budget allocated to this cell (wei string)
-
-    RewardProof:
-      type: object
-      description: |
-        All data needed to call `claimReward(epochId, h3Index, amount, proof)`
-        on the VayuEpochSettlement contract.
-      properties:
-        epochId:
-          type: integer
-          format: uint32
-        reporter:
-          type: string
-        h3Index:
-          type: string
-          description: H3 cell the reward is for (hex uint64)
-        amount:
-          type: string
-          description: Reward amount in token wei (uint256 as decimal string)
-        proof:
-          type: array
-          items:
-            type: string
-          description: Array of 32-byte Merkle proof hashes (0x-prefixed)
-        leafIndex:
-          type: integer
-          description: Position of the reward leaf in the tree (informational)
-
-    ReporterProfile:
-      type: object
-      properties:
-        reporter:
-          type: string
-        stake:
-          type: string
-          description: Active stake in token wei
-        totalReadings:
-          type: integer
-          description: Lifetime reading count accepted by this relay
-        avgScore:
-          type: number
-          format: float
-          description: Rolling average Schelling score (0.0 - 1.0)
-        totalRewardsEarned:
-          type: string
-          description: Lifetime rewards earned in token wei
-        consecutiveZeroEpochs:
-          type: integer
-          description: Current streak of zero-score epochs (triggers auto-slash at 10)
-        lastActiveEpoch:
-          type: integer
-          format: uint32
-        activeSinceEpoch:
-          type: integer
-          format: uint32
-          description: First epoch this reporter submitted a reading
-
-    RewardEntry:
-      type: object
-      properties:
-        epochId:
-          type: integer
-          format: uint32
-        h3Index:
-          type: string
-        amount:
-          type: string
-          description: Reward amount in token wei
-        status:
-          type: string
-          enum: [unclaimed, claimed, expired]
-        proof:
-          type: array
-          items:
-            type: string
-          description: Merkle proof (included only for unclaimed rewards)
-        claimableAfter:
-          type: integer
-          description: UNIX timestamp when claim becomes available (after challenge window)
-        expiresAt:
-          type: integer
-          description: UNIX timestamp when claim expires (committedAt + 90 days)
 
     HealthStatus:
       type: object
@@ -730,29 +200,22 @@ components:
           enum: [healthy, degraded, unhealthy]
         version:
           type: string
-          description: Relay software version
         currentEpochId:
           type: integer
           format: uint32
         chainId:
           type: integer
-          description: Connected chain ID (8453 = Base, 84532 = Base Sepolia)
         blockNumber:
           type: integer
-          description: Latest block number the relay has synced to
-        ipfsConnected:
+        commitWorkerRunning:
           type: boolean
-          description: Whether the relay can reach its IPFS node / pinning service
         lastCommittedEpoch:
           type: integer
           format: uint32
-          description: Most recent epoch successfully committed on-chain
         lastCommitTxHash:
           type: string
-          description: Transaction hash of the last commitEpoch call
         uptimeSeconds:
           type: integer
-          description: Seconds since the relay process started
 
     Error:
       type: object
@@ -768,4 +231,4 @@ components:
           description: Human-readable error description
         retryAfter:
           type: integer
-          description: Seconds to wait before retrying (only for 429 responses)
+          description: Seconds to wait before retrying (for 429)
