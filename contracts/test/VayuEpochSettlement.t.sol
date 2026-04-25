@@ -48,13 +48,13 @@ library MerkleHelper {
     // ── Proof builders ────────────────────────────────────────────────────────
 
     /// @dev Proof for leaf0 in a 2-leaf tree: sibling is leaf1.
-    function proof2_leaf0(bytes32 leaf1) internal pure returns (bytes32[] memory p) {
+    function proof2Leaf0(bytes32 leaf1) internal pure returns (bytes32[] memory p) {
         p = new bytes32[](1);
         p[0] = leaf1;
     }
 
     /// @dev Proof for leaf1 in a 2-leaf tree: sibling is leaf0.
-    function proof2_leaf1(bytes32 leaf0) internal pure returns (bytes32[] memory p) {
+    function proof2Leaf1(bytes32 leaf0) internal pure returns (bytes32[] memory p) {
         p = new bytes32[](1);
         p[0] = leaf0;
     }
@@ -78,7 +78,7 @@ library MerkleHelper {
 
     /// @dev Proof for l0: walk up l0 → n01 → root.
     ///      Siblings: l1 (leaf level), n23=hashPair(l2,l3) (root level).
-    function proof4_leaf0(
+    function proof4Leaf0(
         bytes32 /* l0 */, bytes32 l1, bytes32 l2, bytes32 l3
     ) internal pure returns (bytes32[] memory p) {
         p = new bytes32[](2);
@@ -88,7 +88,7 @@ library MerkleHelper {
 
     /// @dev Proof for l1: walk up l1 → n01 → root.
     ///      Siblings: l0 (leaf level), n23=hashPair(l2,l3) (root level).
-    function proof4_leaf1(
+    function proof4Leaf1(
         bytes32 l0, bytes32 /* l1 */, bytes32 l2, bytes32 l3
     ) internal pure returns (bytes32[] memory p) {
         p = new bytes32[](2);
@@ -98,7 +98,7 @@ library MerkleHelper {
 
     /// @dev Proof for l2: walk up l2 → n23 → root.
     ///      Siblings: l3 (leaf level), n01=hashPair(l0,l1) (root level).
-    function proof4_leaf2(
+    function proof4Leaf2(
         bytes32 l0, bytes32 l1, bytes32 /* l2 */, bytes32 l3
     ) internal pure returns (bytes32[] memory p) {
         p = new bytes32[](2);
@@ -236,7 +236,7 @@ contract SettlementBase is Test {
     }
 
     /// @dev Build a reading with a specific AQI value (for spatial anomaly tests).
-    function _readingAQI(
+    function _readingAqi(
         address rep,
         uint32 epochId,
         uint64 h3Index,
@@ -255,23 +255,36 @@ contract SettlementBase is Test {
     ///      challengeRewardComputation so that the contract force-deactivates it.
     ///      `r` is left with active=false, stake<MIN_RELAY, pendingUnstake=0.
     function _slashRelayBelowMin(address r, uint32 epochId) internal {
+        // Data tree: reporter submitted a reading for H3_RES8
         VayuTypes.AQIReading memory rd = _reading(reporter, epochId, H3_RES8);
-        bytes32 leaf     = VayuTypes.dataLeaf(rd);
-        bytes32 dataRoot = MerkleHelper.root1(leaf);
-        _commitEpoch(r, epochId, dataRoot, bytes32(0));
+        bytes32 dLeaf    = VayuTypes.dataLeaf(rd);
+        bytes32 dataRoot = MerkleHelper.root1(dLeaf);
 
+        // Reward tree: reporter2 was paid for H3_RES8 despite having no data — the fraud
+        uint256 fraudAmt   = 1000;
+        bytes32 rLeaf      = VayuTypes.rewardLeaf(reporter2, epochId, H3_RES8, fraudAmt);
+        bytes32 rewardRoot = MerkleHelper.root1(rLeaf);
+
+        _commitEpoch(r, epochId, dataRoot, rewardRoot);
+
+        // Data side: prove reporter's reading is in the data tree
         VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
         cells[0] = rd;
-        bytes32[][] memory proofs = new bytes32[][](1);
-        proofs[0] = new bytes32[](0); // empty proof for single-leaf tree
+        bytes32[][] memory dataProofs = new bytes32[][](1);
+        dataProofs[0] = new bytes32[](0); // single-leaf proof is empty
 
+        // Reward side: prove reporter2's fraudulent reward is in the reward tree
         address[] memory claimedReps = new address[](1);
-        claimedReps[0] = reporter;
+        claimedReps[0] = reporter2;
         uint256[] memory claimedAmts = new uint256[](1);
-        claimedAmts[0] = 1000;
+        claimedAmts[0] = fraudAmt;
+        bytes32[][] memory rewardProofs = new bytes32[][](1);
+        rewardProofs[0] = new bytes32[](0); // single-leaf proof is empty
 
         vm.prank(fisherman);
-        settlement.challengeRewardComputation(epochId, H3_RES8, cells, proofs, claimedReps, claimedAmts);
+        settlement.challengeRewardComputation(
+            epochId, H3_RES8, cells, dataProofs, claimedReps, claimedAmts, rewardProofs
+        );
     }
 }
 
@@ -824,6 +837,22 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertEq(settlement.reporterStake(reporter2), 0);
     }
 
+    // commitEpoch penalty-list slash must emit the Slashed event with ChallengeType.PenaltyListFraud
+    function test_commitEpoch_penaltyList_emitsSlashedWithPenaltyListFraud() public {
+        _stakeReporter(staker, reporter, MIN_REPORT);
+        uint256 stakeBefore = settlement.reporterStake(reporter);
+        uint256 slashAmt = (stakeBefore * VayuTypes.SLASH_REPORTER_CONSECUTIVE_ZEROS) / VayuTypes.BPS_DENOMINATOR;
+
+        address[] memory penalty = new address[](1);
+        penalty[0] = reporter;
+
+        vm.prank(relay);
+        vm.expectEmit(true, false, false, true);
+        emit VayuEpochSettlement.Slashed(reporter, slashAmt, 0, VayuTypes.ChallengeType.PenaltyListFraud, EPOCH1);
+        // Use commitEpoch directly so we can intercept events before the internal slash fires
+        settlement.commitEpoch(EPOCH1, bytes32(0), bytes32(0), "ipfs://test", 1, 1, penalty);
+    }
+
     // Only active relays may commit epochs; any other caller must be rejected.
     function test_revert_commitEpoch_notActiveRelay() public {
         vm.prank(fisherman);
@@ -874,7 +903,7 @@ contract VES_ClaimReward_Test is SettlementBase {
         bytes32 leaf0 = VayuTypes.rewardLeaf(reporter,  EPOCH1, H3_RES8,     claimAmount);
         bytes32 leaf1 = VayuTypes.rewardLeaf(reporter2, EPOCH1, H3_RES8 ^ 1, claimAmount);
         rewardRoot = MerkleHelper.root2(leaf0, leaf1);
-        claimProof = MerkleHelper.proof2_leaf0(leaf1);
+        claimProof = MerkleHelper.proof2Leaf0(leaf1);
 
         _commitEpoch(relay, EPOCH1, bytes32(0), rewardRoot);
         _pastChallengeWindow();
@@ -1073,8 +1102,8 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         bytes32 leaf1 = VayuTypes.dataLeaf(r1);
         bytes32 leaf2 = VayuTypes.dataLeaf(r2);
         dataRoot = MerkleHelper.root2(leaf1, leaf2);
-        proof1   = MerkleHelper.proof2_leaf0(leaf2);
-        proof2   = MerkleHelper.proof2_leaf1(leaf1);
+        proof1   = MerkleHelper.proof2Leaf0(leaf2);
+        proof2   = MerkleHelper.proof2Leaf1(leaf1);
 
         _commitEpoch(relay, EPOCH1, dataRoot, bytes32(0));
     }
@@ -1139,12 +1168,12 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         // Build two readings for the same cell — same reporter, same h3Index but
         // different AQI so the leaves are distinct — and commit them to EPOCH2.
         VayuTypes.AQIReading memory ra = _reading(reporter, EPOCH2, H3_RES8);
-        VayuTypes.AQIReading memory rb = _readingAQI(reporter, EPOCH2, H3_RES8, 150);
+        VayuTypes.AQIReading memory rb = _readingAqi(reporter, EPOCH2, H3_RES8, 150);
         bytes32 la = VayuTypes.dataLeaf(ra);
         bytes32 lb = VayuTypes.dataLeaf(rb);
         bytes32 r2Root = MerkleHelper.root2(la, lb);
-        bytes32[] memory pa = MerkleHelper.proof2_leaf0(lb);
-        bytes32[] memory pb = MerkleHelper.proof2_leaf1(la);
+        bytes32[] memory pa = MerkleHelper.proof2Leaf0(lb);
+        bytes32[] memory pb = MerkleHelper.proof2Leaf1(la);
         _commitEpoch(relay, EPOCH2, r2Root, bytes32(0));
         vm.prank(fisherman);
         vm.expectRevert(VayuEpochSettlement.SameCellNotAllowed.selector);
@@ -1162,8 +1191,8 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         bytes32 la = VayuTypes.dataLeaf(ra);
         bytes32 lb = VayuTypes.dataLeaf(rb);
         bytes32 r2Root = MerkleHelper.root2(la, lb);
-        bytes32[] memory pa = MerkleHelper.proof2_leaf0(lb);
-        bytes32[] memory pb = MerkleHelper.proof2_leaf1(la);
+        bytes32[] memory pa = MerkleHelper.proof2Leaf0(lb);
+        bytes32[] memory pb = MerkleHelper.proof2Leaf1(la);
         _commitEpoch(relay, EPOCH2, r2Root, bytes32(0));
         vm.prank(fisherman);
         vm.expectRevert(VayuEpochSettlement.EpochMismatch.selector);
@@ -1204,12 +1233,32 @@ contract VES_ChallengeDuplicateLocation_Test is SettlementBase {
         bytes32 la = VayuTypes.dataLeaf(ra);
         bytes32 lb = VayuTypes.dataLeaf(rb);
         bytes32 root = MerkleHelper.root2(la, lb);
-        bytes32[] memory pa = MerkleHelper.proof2_leaf0(lb);
-        bytes32[] memory pb = MerkleHelper.proof2_leaf1(la);
+        bytes32[] memory pa = MerkleHelper.proof2Leaf0(lb);
+        bytes32[] memory pb = MerkleHelper.proof2Leaf1(la);
         _commitEpoch(relay, EPOCH2, root, bytes32(0));
         vm.prank(fisherman);
         settlement.challengeDuplicateLocation(EPOCH2, ra, pa, rb, pb);
         // No revert, fisherman gets 0 bounty
+    }
+
+    // After a successful challenge the epochDuplicateLocationChallenged flag for
+    // that epoch+reporter must be set to true.
+    function test_challengeDuplicateLocation_setsEpochDuplicateChallengedFlag() public {
+        assertFalse(settlement.epochDuplicateLocationChallenged(EPOCH1, reporter));
+        vm.prank(fisherman);
+        settlement.challengeDuplicateLocation(EPOCH1, r1, proof1, r2, proof2);
+        assertTrue(settlement.epochDuplicateLocationChallenged(EPOCH1, reporter));
+    }
+
+    // A second challenge for the same epoch+reporter must revert with EpochAlreadyChallenged
+    // so the reporter cannot be drained below zero within the challenge window.
+    function test_revert_challengeDuplicateLocation_alreadyChallenged() public {
+        vm.prank(fisherman);
+        settlement.challengeDuplicateLocation(EPOCH1, r1, proof1, r2, proof2);
+        // Second challenge on same epoch+reporter reverts
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.EpochAlreadyChallenged.selector);
+        settlement.challengeDuplicateLocation(EPOCH1, r1, proof1, r2, proof2);
     }
 }
 
@@ -1235,10 +1284,10 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
         _stakeReporter(staker, reporter, MIN_REPORT);
 
         // Cell readings — deliberately anomalous AQI
-        cell0  = _readingAQI(reporter,  EPOCH1, H3_RES8,       300);
-        cell1  = _readingAQI(reporter2, EPOCH1, H3_RES8 ^ 1,   300);
-        neigh0 = _readingAQI(reporter,  EPOCH1, H3_RES8 ^ 2,    50);
-        neigh1 = _readingAQI(reporter2, EPOCH1, H3_RES8 ^ 3,    50);
+        cell0  = _readingAqi(reporter,  EPOCH1, H3_RES8,       300);
+        cell1  = _readingAqi(reporter2, EPOCH1, H3_RES8 ^ 1,   300);
+        neigh0 = _readingAqi(reporter,  EPOCH1, H3_RES8 ^ 2,    50);
+        neigh1 = _readingAqi(reporter2, EPOCH1, H3_RES8 ^ 3,    50);
 
         bytes32 lc0 = VayuTypes.dataLeaf(cell0);
         bytes32 lc1 = VayuTypes.dataLeaf(cell1);
@@ -1247,11 +1296,11 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
         dataRoot4 = MerkleHelper.root4(lc0, lc1, ln0, ln1);
 
         cellProofs = new bytes32[][](2);
-        cellProofs[0] = MerkleHelper.proof4_leaf0(lc0, lc1, ln0, ln1);
-        cellProofs[1] = MerkleHelper.proof4_leaf1(lc0, lc1, ln0, ln1);
+        cellProofs[0] = MerkleHelper.proof4Leaf0(lc0, lc1, ln0, ln1);
+        cellProofs[1] = MerkleHelper.proof4Leaf1(lc0, lc1, ln0, ln1);
 
         neighProofs = new bytes32[][](2);
-        neighProofs[0] = MerkleHelper.proof4_leaf2(lc0, lc1, ln0, ln1);
+        neighProofs[0] = MerkleHelper.proof4Leaf2(lc0, lc1, ln0, ln1);
         neighProofs[1] = new bytes32[](2);
         neighProofs[1][0] = ln0;
         neighProofs[1][1] = MerkleHelper.hashPair(lc0, lc1);
@@ -1300,9 +1349,10 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
     // If the AQI difference between cell and neighbours is within SPATIAL_TOLERANCE_AQI
     // the challenge must be rejected with NotAnomaly.
     function test_revert_challengeSpatialAnomaly_notAnomaly() public {
-        // AQI difference within tolerance — not a valid anomaly
-        VayuTypes.AQIReading memory nonAnomCell  = _readingAQI(reporter, EPOCH1, H3_RES8,     100);
-        VayuTypes.AQIReading memory nonAnomNeigh = _readingAQI(reporter, EPOCH1, H3_RES8 ^ 2, 110);
+        // AQI difference within tolerance — not a valid anomaly.
+        // Use EPOCH2 readings so epochId matches the committed+challenged epoch.
+        VayuTypes.AQIReading memory nonAnomCell  = _readingAqi(reporter, EPOCH2, H3_RES8,     100);
+        VayuTypes.AQIReading memory nonAnomNeigh = _readingAqi(reporter, EPOCH2, H3_RES8 ^ 2, 110);
 
         bytes32 lc = VayuTypes.dataLeaf(nonAnomCell);
         bytes32 ln = VayuTypes.dataLeaf(nonAnomNeigh);
@@ -1314,9 +1364,9 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
         VayuTypes.AQIReading[] memory neighs = new VayuTypes.AQIReading[](1);
         neighs[0] = nonAnomNeigh;
         bytes32[][] memory cp = new bytes32[][](1);
-        cp[0] = MerkleHelper.proof2_leaf0(ln);
+        cp[0] = MerkleHelper.proof2Leaf0(ln);
         bytes32[][] memory np = new bytes32[][](1);
-        np[0] = MerkleHelper.proof2_leaf1(lc);
+        np[0] = MerkleHelper.proof2Leaf1(lc);
 
         vm.prank(fisherman);
         vm.expectRevert(VayuEpochSettlement.NotAnomaly.selector);
@@ -1338,6 +1388,111 @@ contract VES_ChallengeSpatialAnomaly_Test is SettlementBase {
         vm.expectRevert(VayuEpochSettlement.ChallengeWindowClosed.selector);
         settlement.challengeSpatialAnomaly(EPOCH1, H3_RES8, cells, cp, neighs, np);
     }
+
+    // After a successful challenge, epochCellSpatialChallenged[epochId][disputedCell]
+    // must be set to true to prevent re-slashing the same cell.
+    function test_challengeSpatialAnomaly_setsEpochCellChallengedFlag() public {
+        assertFalse(settlement.epochCellSpatialChallenged(EPOCH1, H3_RES8));
+
+        VayuTypes.AQIReading[] memory cells  = new VayuTypes.AQIReading[](1);
+        cells[0] = cell0;
+        VayuTypes.AQIReading[] memory neighs = new VayuTypes.AQIReading[](2);
+        neighs[0] = neigh0;
+        neighs[1] = neigh1;
+        bytes32[][] memory cp = new bytes32[][](1);
+        cp[0] = cellProofs[0];
+        bytes32[][] memory np = new bytes32[][](2);
+        np[0] = neighProofs[0];
+        np[1] = neighProofs[1];
+
+        vm.prank(fisherman);
+        settlement.challengeSpatialAnomaly(EPOCH1, H3_RES8, cells, cp, neighs, np);
+
+        assertTrue(settlement.epochCellSpatialChallenged(EPOCH1, H3_RES8));
+    }
+
+    // A second challenge on the same epoch+cell must revert — one slash per cell per epoch.
+    function test_revert_challengeSpatialAnomaly_epochCellAlreadyChallenged() public {
+        VayuTypes.AQIReading[] memory cells  = new VayuTypes.AQIReading[](1);
+        cells[0] = cell0;
+        VayuTypes.AQIReading[] memory neighs = new VayuTypes.AQIReading[](2);
+        neighs[0] = neigh0;
+        neighs[1] = neigh1;
+        bytes32[][] memory cp = new bytes32[][](1);
+        cp[0] = cellProofs[0];
+        bytes32[][] memory np = new bytes32[][](2);
+        np[0] = neighProofs[0];
+        np[1] = neighProofs[1];
+
+        // First challenge succeeds
+        vm.prank(fisherman);
+        settlement.challengeSpatialAnomaly(EPOCH1, H3_RES8, cells, cp, neighs, np);
+
+        // Second challenge on the same epoch+cell reverts
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.EpochAlreadyChallenged.selector);
+        settlement.challengeSpatialAnomaly(EPOCH1, H3_RES8, cells, cp, neighs, np);
+    }
+
+    // A cell reading whose h3Index does not match disputedCell must revert with
+    // CellMismatch before any Merkle proof is checked.
+    function test_revert_challengeSpatialAnomaly_cellMismatch() public {
+        // Reading claims cell H3_RES8 ^ 5 but disputedCell is H3_RES8
+        VayuTypes.AQIReading memory wrongCell = _readingAqi(reporter, EPOCH1, H3_RES8 ^ 5, 300);
+
+        VayuTypes.AQIReading[] memory cells  = new VayuTypes.AQIReading[](1);
+        cells[0] = wrongCell;
+        VayuTypes.AQIReading[] memory neighs = new VayuTypes.AQIReading[](1);
+        neighs[0] = neigh0;
+        bytes32[][] memory cp = new bytes32[][](1);
+        cp[0] = new bytes32[](0); // proof is irrelevant — revert precedes Merkle check
+        bytes32[][] memory np = new bytes32[][](1);
+        np[0] = neighProofs[0];
+
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.CellMismatch.selector);
+        settlement.challengeSpatialAnomaly(EPOCH1, H3_RES8, cells, cp, neighs, np);
+    }
+
+    // A cell reading whose epochId does not match the challenged epochId must revert
+    // with EpochMismatch before any Merkle proof is checked.
+    function test_revert_challengeSpatialAnomaly_epochMismatch() public {
+        // Reading is for EPOCH2 but we are challenging EPOCH1
+        VayuTypes.AQIReading memory wrongEpoch = _readingAqi(reporter, EPOCH2, H3_RES8, 300);
+
+        VayuTypes.AQIReading[] memory cells  = new VayuTypes.AQIReading[](1);
+        cells[0] = wrongEpoch;
+        VayuTypes.AQIReading[] memory neighs = new VayuTypes.AQIReading[](1);
+        neighs[0] = neigh0;
+        bytes32[][] memory cp = new bytes32[][](1);
+        cp[0] = new bytes32[](0); // proof is irrelevant — revert precedes Merkle check
+        bytes32[][] memory np = new bytes32[][](1);
+        np[0] = neighProofs[0];
+
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.EpochMismatch.selector);
+        settlement.challengeSpatialAnomaly(EPOCH1, H3_RES8, cells, cp, neighs, np);
+    }
+
+    // A neighbour reading whose h3Index equals the disputedCell must revert with
+    // SameCellNotAllowed — neighbours must be distinct from the disputed cell.
+    function test_revert_challengeSpatialAnomaly_neighbourSameAsDisputedCell() public {
+        // Neighbour reading is for H3_RES8 (same as disputedCell)
+        VayuTypes.AQIReading memory sameCell = _readingAqi(reporter, EPOCH1, H3_RES8, 50);
+
+        VayuTypes.AQIReading[] memory cells  = new VayuTypes.AQIReading[](1);
+        cells[0] = cell0;
+        VayuTypes.AQIReading[] memory neighs = new VayuTypes.AQIReading[](1);
+        neighs[0] = sameCell;
+        bytes32[][] memory cp = new bytes32[][](1);
+        cp[0] = cellProofs[0];
+        bytes32[][] memory np = new bytes32[][](1);
+        np[0] = new bytes32[](0); // proof is irrelevant — revert precedes Merkle check
+
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.SameCellNotAllowed.selector);
+        settlement.challengeSpatialAnomaly(EPOCH1, H3_RES8, cells, cp, neighs, np);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1348,27 +1503,42 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
 
     VayuTypes.AQIReading internal r1;
     bytes32 internal dataRoot;
+    bytes32 internal rewardRoot;
     bytes32[][] internal cellProofs;
     address[] internal claimedReporters;
     uint256[] internal claimedAmounts;
+    bytes32[][] internal rewardProofs;
 
+    // Fraud scenario: reporter submitted data for H3_RES8, but the relay
+    // paid reporter2 (who has no data reading for that cell) in the reward
+    // tree. reporter2 was rewarded without doing any work — provable fraud.
     function setUp() public override {
         super.setUp();
         _registerRelay(relay);
 
+        // Data tree: reporter's reading proves they submitted data for H3_RES8
         r1 = _reading(reporter, EPOCH1, H3_RES8);
-        bytes32 leaf = VayuTypes.dataLeaf(r1);
-        dataRoot = MerkleHelper.root1(leaf);
+        bytes32 dLeaf = VayuTypes.dataLeaf(r1);
+        dataRoot = MerkleHelper.root1(dLeaf);
 
-        _commitEpoch(relay, EPOCH1, dataRoot, bytes32(0));
+        // Reward tree: reporter2 was paid for H3_RES8 despite having no data
+        uint256 fraudAmount = 1000;
+        bytes32 rLeaf = VayuTypes.rewardLeaf(reporter2, EPOCH1, H3_RES8, fraudAmount);
+        rewardRoot = MerkleHelper.root1(rLeaf);
 
+        _commitEpoch(relay, EPOCH1, dataRoot, rewardRoot);
+
+        // Data proof for reporter's reading (single-leaf: empty proof)
         cellProofs = new bytes32[][](1);
-        cellProofs[0] = new bytes32[](0); // single-leaf proof is empty
+        cellProofs[0] = new bytes32[](0);
 
+        // Reward proof for reporter2's fraudulent claim (single-leaf: empty proof)
         claimedReporters = new address[](1);
-        claimedReporters[0] = reporter;
+        claimedReporters[0] = reporter2;
         claimedAmounts = new uint256[](1);
-        claimedAmounts[0] = 1000;
+        claimedAmounts[0] = fraudAmount;
+        rewardProofs = new bytes32[][](1);
+        rewardProofs[0] = new bytes32[](0);
     }
 
     // The relay must be slashed SLASH_RELAY_REWARD_COMPUTATION bps of their stake.
@@ -1380,7 +1550,7 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
         cells[0] = r1;
 
         vm.prank(fisherman);
-        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts, rewardProofs);
 
         assertEq(settlement.relayStake(relay), stakeBefore - expectedSlash);
     }
@@ -1396,22 +1566,34 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
 
         uint256 before = token.balanceOf(fisherman);
         vm.prank(fisherman);
-        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts, rewardProofs);
         assertEq(token.balanceOf(fisherman), before + bounty);
     }
 
     // If the relay's remaining stake falls below MIN_RELAY after the slash it must
     // be deactivated immediately (MIN_RELAY=10k, slash 30% → 7k < min).
     function test_challengeRewardComputation_deactivatesRelay_whenBelowMin() public {
-        // Use a relay with just-above minimum stake, slash 30% → falls below
         VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
         cells[0] = r1;
 
         vm.prank(fisherman);
-        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts, rewardProofs);
 
         // MIN_RELAY = 10_000e18, slash 30% = 3_000e18 → remaining 7_000e18 < MIN_RELAY
         assertFalse(settlement.isActiveRelay(relay));
+    }
+
+    // epochRewardChallenged must be set to true after a successful challenge.
+    function test_challengeRewardComputation_setsEpochChallengedFlag() public {
+        assertFalse(settlement.epochRewardChallenged(EPOCH1));
+
+        VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
+        cells[0] = r1;
+
+        vm.prank(fisherman);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts, rewardProofs);
+
+        assertTrue(settlement.epochRewardChallenged(EPOCH1));
     }
 
     // Reward computation challenges are only valid within the 12-hour window.
@@ -1421,11 +1603,11 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
         cells[0] = r1;
         vm.prank(fisherman);
         vm.expectRevert(VayuEpochSettlement.ChallengeWindowClosed.selector);
-        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts, rewardProofs);
     }
 
-    // A proof that does not verify against the epoch dataRoot must revert.
-    function test_revert_challengeRewardComputation_invalidProof() public {
+    // A data Merkle proof that does not verify against the epoch dataRoot must revert.
+    function test_revert_challengeRewardComputation_invalidDataProof() public {
         bytes32[][] memory bad = new bytes32[][](1);
         bad[0] = new bytes32[](1);
         bad[0][0] = keccak256("bad");
@@ -1435,7 +1617,90 @@ contract VES_ChallengeRewardComputation_Test is SettlementBase {
 
         vm.prank(fisherman);
         vm.expectRevert(VayuEpochSettlement.InvalidMerkleProof.selector);
-        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, bad, claimedReporters, claimedAmounts);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, bad, claimedReporters, claimedAmounts, rewardProofs);
+    }
+
+    // A reward Merkle proof that does not verify against the epoch rewardRoot must revert.
+    function test_revert_challengeRewardComputation_invalidRewardProof() public {
+        VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
+        cells[0] = r1;
+
+        bytes32[][] memory badRewardProofs = new bytes32[][](1);
+        badRewardProofs[0] = new bytes32[](1);
+        badRewardProofs[0][0] = keccak256("bad");
+
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.InvalidMerkleProof.selector);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts, badRewardProofs);
+    }
+
+    // When every claimed reporter has a matching data reading for the disputed cell,
+    // no provable fraud exists and the challenge must revert with NoDiscrepancyFound.
+    function test_revert_challengeRewardComputation_noDiscrepancy() public {
+        // Honest epoch: reporter's reward matches their data reading exactly
+        VayuTypes.AQIReading memory rd = _reading(reporter, EPOCH2, H3_RES8);
+        bytes32 dLeaf = VayuTypes.dataLeaf(rd);
+        bytes32 dRoot = MerkleHelper.root1(dLeaf);
+
+        uint256 amt   = 500;
+        bytes32 rLeaf = VayuTypes.rewardLeaf(reporter, EPOCH2, H3_RES8, amt);
+        bytes32 rRoot = MerkleHelper.root1(rLeaf);
+
+        _registerRelay(relay2);
+        _commitEpoch(relay2, EPOCH2, dRoot, rRoot);
+
+        VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
+        cells[0] = rd;
+        bytes32[][] memory cp = new bytes32[][](1);
+        cp[0] = new bytes32[](0);
+
+        address[] memory claimed = new address[](1);
+        claimed[0] = reporter;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = amt;
+        bytes32[][] memory rp = new bytes32[][](1);
+        rp[0] = new bytes32[](0);
+
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.NoDiscrepancyFound.selector);
+        settlement.challengeRewardComputation(EPOCH2, H3_RES8, cells, cp, claimed, amounts, rp);
+    }
+
+    // A second challenge on the same epoch must revert — only one slash per epoch.
+    function test_revert_challengeRewardComputation_epochAlreadyChallenged() public {
+        VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
+        cells[0] = r1;
+
+        // First challenge succeeds
+        vm.prank(fisherman);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts, rewardProofs);
+
+        // Second challenge on the same epoch reverts
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.EpochAlreadyChallenged.selector);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, cellProofs, claimedReporters, claimedAmounts, rewardProofs);
+    }
+
+    // Passing an empty cellReadings array must revert with EmptyArray. 
+    function test_revert_challengeRewardComputation_emptyCellReadings() public {
+        VayuTypes.AQIReading[] memory emptyCells = new VayuTypes.AQIReading[](0);
+        bytes32[][] memory emptyCellProofs = new bytes32[][](0);
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.EmptyArray.selector);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, emptyCells, emptyCellProofs, claimedReporters, claimedAmounts, rewardProofs);
+    }
+
+    // cellProofs.length must equal cellReadings.length; a mismatch must revert
+    // with ArrayLengthMismatch to prevent misaligned proof indexing.
+    function test_revert_challengeRewardComputation_cellProofsLengthMismatch() public {
+        VayuTypes.AQIReading[] memory cells = new VayuTypes.AQIReading[](1);
+        cells[0] = r1;
+        bytes32[][] memory mismatchedProofs = new bytes32[][](2); // 2 proofs for 1 reading
+        mismatchedProofs[0] = new bytes32[](0);
+        mismatchedProofs[1] = new bytes32[](0);
+        vm.prank(fisherman);
+        vm.expectRevert(VayuEpochSettlement.ArrayLengthMismatch.selector);
+        settlement.challengeRewardComputation(EPOCH1, H3_RES8, cells, mismatchedProofs, claimedReporters, claimedAmounts, rewardProofs);
     }
 }
 

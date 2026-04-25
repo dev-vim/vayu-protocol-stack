@@ -65,6 +65,26 @@ contract VayuEpochSettlement is Ownable, Pausable {
     // the penalty list in that epoch. Reset on successful challenge.
     mapping(uint32 => mapping(address => bool)) public penaltySlashed;
 
+    // ── Per-epoch reward challenge guard ──
+    // epochRewardChallenged[epochId] = true once a successful reward computation
+    // challenge has been resolved for that epoch. Prevents a relay from being
+    // repeatedly slashed on the same epoch within the challenge window.
+    mapping(uint32 => bool) public epochRewardChallenged;
+
+    // ── Per-epoch-per-cell spatial anomaly guard ──
+    // epochCellSpatialChallenged[epochId][cellId] = true once a successful
+    // spatial anomaly challenge has been resolved for that epoch+cell pair.
+    // Prevents the same set of reporters from being slashed multiple times for
+    // the same anomalous reading within the challenge window.
+    mapping(uint32 => mapping(uint64 => bool)) public epochCellSpatialChallenged;
+
+    // ── Per-epoch-per-reporter duplicate location challenge guard ──
+    // epochDuplicateLocationChallenged[epochId][reporter] = true once a
+    // successful duplicate location challenge has been resolved for that
+    // epoch+reporter pair. Prevents the same reporter being repeatedly drained
+    // within the challenge window.
+    mapping(uint32 => mapping(address => bool)) public epochDuplicateLocationChallenged;
+
     // ─────────────────────────────────────────────────────────────────────────
     // Events
     // ─────────────────────────────────────────────────────────────────────────
@@ -117,6 +137,10 @@ contract VayuEpochSettlement is Ownable, Pausable {
     error ReporterNotPenalized();
     error ProofEpochOutOfRange();
     error ReporterMismatch();
+    error EpochAlreadyChallenged();
+    error NoDiscrepancyFound();
+    error ArrayLengthMismatch();
+    error CellMismatch();
 
     // ─────────────────────────────────────────────────────────────────────────
     // Constructor
@@ -212,11 +236,10 @@ contract VayuEpochSettlement is Ownable, Pausable {
                 reporterStakes[reporter].active -= slashAmt;
                 penaltySlashed[epochId][reporter] = true;
                 totalPenalty += slashAmt;
-                emit Slashed(reporter, slashAmt, 0, VayuTypes.ChallengeType.SpatialAnomaly, epochId);
+                emit Slashed(reporter, slashAmt, 0, VayuTypes.ChallengeType.PenaltyListFraud, epochId);
             }
         }
 
-        // ── Interactions (CEI: all transfers after state mutations) ──
         TOKEN.safeTransfer(msg.sender, relayFee);
         if (totalPenalty > 0) {
             TOKEN.safeTransfer(treasury, totalPenalty);
@@ -293,7 +316,7 @@ contract VayuEpochSettlement is Ownable, Pausable {
 
     function challengeSpatialAnomaly(
         uint32 epochId,
-        uint64, /* disputedCell */
+        uint64 disputedCell,
         VayuTypes.AQIReading[] calldata cellReadings,
         bytes32[][] calldata cellProofs,
         VayuTypes.AQIReading[] calldata neighbourReadings,
@@ -304,15 +327,23 @@ contract VayuEpochSettlement is Ownable, Pausable {
         VayuTypes.EpochCommitment storage epoch = epochCommitments[epochId];
         if (epoch.committedAt == 0) revert EpochNotCommitted();
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
+        if (epochCellSpatialChallenged[epochId][disputedCell]) revert EpochAlreadyChallenged();
 
-        // Verify all cell reading proofs
+        // Verify cell reading proofs. Each reading must belong to the challenged
+        // epoch and the specific disputed cell to prevent cross-cell proof recycling.
         for (uint256 i = 0; i < cellReadings.length; i++) {
+            if (cellReadings[i].h3Index != disputedCell) revert CellMismatch();
+            if (cellReadings[i].epochId  != epochId)     revert EpochMismatch();
             bytes32 leaf = VayuTypes.dataLeaf(cellReadings[i]);
             if (!MerkleProof.verify(cellProofs[i], epoch.dataRoot, leaf)) revert InvalidMerkleProof();
         }
 
-        // Verify all neighbour reading proofs
+        // Verify neighbour reading proofs. Neighbours must belong to this epoch
+        // and be from a different cell than the disputed one — using readings from
+        // the same cell as both cell and neighbour would bias the comparison.
         for (uint256 i = 0; i < neighbourReadings.length; i++) {
+            if (neighbourReadings[i].h3Index == disputedCell) revert SameCellNotAllowed();
+            if (neighbourReadings[i].epochId  != epochId)     revert EpochMismatch();
             bytes32 leaf = VayuTypes.dataLeaf(neighbourReadings[i]);
             if (!MerkleProof.verify(neighbourProofs[i], epoch.dataRoot, leaf)) revert InvalidMerkleProof();
         }
@@ -326,12 +357,27 @@ contract VayuEpochSettlement is Ownable, Pausable {
         uint256 diff = cellMedian > neighbourMean ? cellMedian - neighbourMean : neighbourMean - cellMedian;
         if (diff <= VayuTypes.SPATIAL_TOLERANCE_AQI) revert NotAnomaly();
 
+        epochCellSpatialChallenged[epochId][disputedCell] = true;
+
         emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.SpatialAnomaly);
 
-        // Slash all reporters in disputed cell
+        // Slash all reporters in the disputed cell. Dedup to avoid double-slashing
+        // a reporter who appears more than once in the fisherman's reading list.
         uint256 totalSlashed;
         for (uint256 i = 0; i < cellReadings.length; i++) {
             address reporter = cellReadings[i].reporter;
+
+            // O(n²) duplicate scan over calldata — acceptable for the small reading
+            // counts expected per cell (< ~20) and cheaper than a storage mapping.
+            bool isDuplicate;
+            for (uint256 j = 0; j < i; j++) {
+                if (cellReadings[j].reporter == reporter) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            if (isDuplicate) continue;
+
             uint256 stake = reporterStakes[reporter].active;
             if (stake > 0) {
                 // BPS slash: (stake * slashRateBps) / 10_000
@@ -372,6 +418,7 @@ contract VayuEpochSettlement is Ownable, Pausable {
         VayuTypes.EpochCommitment storage epoch = epochCommitments[epochId];
         if (epoch.committedAt == 0) revert EpochNotCommitted();
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
+        if (epochDuplicateLocationChallenged[epochId][reading1.reporter]) revert EpochAlreadyChallenged();
 
         // Verify proofs
         bytes32 leaf1 = VayuTypes.dataLeaf(reading1);
@@ -384,6 +431,7 @@ contract VayuEpochSettlement is Ownable, Pausable {
         if (reading1.epochId != epochId || reading2.epochId != epochId) revert EpochMismatch();
 
         emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.DuplicateLocation);
+        epochDuplicateLocationChallenged[epochId][reading1.reporter] = true;
 
         // Slash reporter
         address reporter = reading1.reporter;
@@ -409,37 +457,80 @@ contract VayuEpochSettlement is Ownable, Pausable {
     // Challenge: Reward Computation
     // ─────────────────────────────────────────────────────────────────────────
 
+    /// @notice Challenge a relay's reward computation for a specific cell.
+    ///
+    /// The fisherman must prove two things simultaneously:
+    ///   1. DATA PROOF   — which reporters contributed readings for `disputedCell`
+    ///                     (Merkle proofs into `epoch.dataRoot`).
+    ///   2. REWARD PROOF — which reporters the relay paid for `disputedCell`,
+    ///                     and at what amounts (Merkle proofs into `epoch.rewardRoot`).
+    ///
+    /// A discrepancy is established when at least one address in `claimedReporters`
+    /// (proven present in the reward tree) has no corresponding reading for
+    /// `disputedCell` in `cellReadings` (the data tree). This proves the relay
+    /// paid a reporter who submitted no data — an unambiguously fraudulent reward.
+    ///
+    /// Each epoch may only be challenged once; subsequent attempts revert with
+    /// `EpochAlreadyChallenged` to prevent stake-draining through repeated slashes.
     function challengeRewardComputation(
         uint32 epochId,
-        uint64, /* disputedCell */
+        uint64 disputedCell,
         VayuTypes.AQIReading[] calldata cellReadings,
         bytes32[][] calldata cellProofs,
         address[] calldata claimedReporters,
-        uint256[] calldata /* claimedAmounts */
+        uint256[] calldata claimedAmounts,
+        bytes32[][] calldata rewardProofs
     ) external whenNotPaused {
         VayuTypes.EpochCommitment storage epoch = epochCommitments[epochId];
         if (epoch.committedAt == 0) revert EpochNotCommitted();
         if (block.timestamp > epoch.committedAt + VayuTypes.CHALLENGE_WINDOW) revert ChallengeWindowClosed();
+        if (epochRewardChallenged[epochId]) revert EpochAlreadyChallenged();
+        if (claimedReporters.length == 0) revert EmptyArray();
+        if (claimedAmounts.length != claimedReporters.length) revert ArrayLengthMismatch();
+        if (rewardProofs.length != claimedReporters.length) revert ArrayLengthMismatch();
+        if (cellReadings.length == 0) revert EmptyArray();
+        if (cellProofs.length != cellReadings.length) revert ArrayLengthMismatch();
 
-        // Verify reading proofs
+        // Step 1: Verify data proofs — proves what readings exist in the data tree
+        // for the disputed cell. This establishes the ground truth of who submitted data.
         for (uint256 i = 0; i < cellReadings.length; i++) {
             bytes32 leaf = VayuTypes.dataLeaf(cellReadings[i]);
             if (!MerkleProof.verify(cellProofs[i], epoch.dataRoot, leaf)) revert InvalidMerkleProof();
         }
 
-        // Verify the claimed rewards are actually in the reward tree
+        // Step 2: Verify reward proofs — proves the relay actually assigned these
+        // rewards in the reward tree. Without this, a fisherman could fabricate
+        // claims about what the relay paid.
         for (uint256 i = 0; i < claimedReporters.length; i++) {
-            // The fisherman must show the relay's claimed amounts are wrong
-            // by providing the data to recompute on-chain
+            bytes32 rLeaf = VayuTypes.rewardLeaf(claimedReporters[i], epochId, disputedCell, claimedAmounts[i]);
+            if (!MerkleProof.verify(rewardProofs[i], epoch.rewardRoot, rLeaf)) revert InvalidMerkleProof();
         }
+
+        // Step 3: Discrepancy check — at least one rewarded reporter must be absent
+        // from the data readings for the disputed cell. A relay that pays reporters
+        // who submitted no data is committing provable fraud.
+        bool discrepancyFound = false;
+        for (uint256 i = 0; i < claimedReporters.length; i++) {
+            bool hasReading = false;
+            for (uint256 j = 0; j < cellReadings.length; j++) {
+                if (cellReadings[j].reporter == claimedReporters[i] &&
+                    cellReadings[j].h3Index  == disputedCell) {
+                    hasReading = true;
+                    break;
+                }
+            }
+            if (!hasReading) {
+                discrepancyFound = true;
+                break;
+            }
+        }
+        if (!discrepancyFound) revert NoDiscrepancyFound();
+
+        epochRewardChallenged[epochId] = true;
 
         emit ChallengeSubmitted(epochId, msg.sender, VayuTypes.ChallengeType.RewardComputation);
 
-        // Recompute reward amounts on-chain for the disputed cell
-        // This is intentionally simplified for v1 — proper implementation
-        // requires the full scoring algorithm on-chain
-        // For now: slash the relay if the fisherman can demonstrate a discrepancy
-        // Slash the relay that committed the faulty reward tree.
+        // Slash the relay that committed the fraudulent reward tree.
         address relay = epoch.relay;
         RelayInfo storage ri = relayInfo[relay];
         uint256 slashAmt = (ri.stake * VayuTypes.SLASH_RELAY_REWARD_COMPUTATION) / VayuTypes.BPS_DENOMINATOR;
