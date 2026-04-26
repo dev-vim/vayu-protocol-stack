@@ -1,0 +1,20 @@
+server:
+  port: 3000
+  servlet:
+    context-path: /v1
+
+spring:
+  application:
+    name: vayu-relay
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+relay:
+  epoch:
+    duration-seconds: 3600
+    commit-check-interval-ms: 60000
+    timestamp-tolerance-seconds: 300
