@@ -3,7 +3,7 @@ package protocol.vayu.relay.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "relay")
-public record RelayProperties(Epoch epoch, Validation validation) {
+public record RelayProperties(Epoch epoch, Validation validation, Security security) {
 
     public record Epoch(long durationSeconds, long commitCheckIntervalMs, long timestampToleranceSeconds) {
     }
@@ -28,4 +28,7 @@ public record RelayProperties(Epoch epoch, Validation validation) {
             String rateLimit
         ) {
     }
+
+        public record Security(boolean signatureVerificationEnabled, boolean stakeCheckEnabled) {
+        }
 }

@@ -4,7 +4,7 @@ import jakarta.validation.Valid;
 import protocol.vayu.relay.api.dto.HealthStatusResponse;
 import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
-import protocol.vayu.relay.service.ReadingIngestionService;
+import protocol.vayu.relay.service.ingestion.ReadingIngestionService;
 import protocol.vayu.relay.service.RelayStatusService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

@@ -30,3 +30,6 @@ relay:
       h3-hex: "h3Index must be valid hex"
       h3-resolution: "h3Index resolution must be %d"
       rate-limit: "reporter can submit once every %d seconds"
+  security:
+    signature-verification-enabled: false
+    stake-check-enabled: false

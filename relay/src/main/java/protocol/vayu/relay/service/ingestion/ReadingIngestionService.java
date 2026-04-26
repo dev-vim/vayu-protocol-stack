@@ -1,9 +1,11 @@
-package protocol.vayu.relay.service;
+package protocol.vayu.relay.service.ingestion;
 
 import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
+import protocol.vayu.relay.service.ingestion.security.ReporterStakeChecker;
+import protocol.vayu.relay.service.ingestion.security.SignatureVerifier;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -15,10 +17,18 @@ import java.util.concurrent.ConcurrentMap;
 public class ReadingIngestionService {
 
     private final RelayProperties relayProperties;
+    private final SignatureVerifier signatureVerifier;
+    private final ReporterStakeChecker reporterStakeChecker;
     private final ConcurrentMap<String, Long> reporterLastReading = new ConcurrentHashMap<>();
 
-    public ReadingIngestionService(RelayProperties relayProperties) {
+    public ReadingIngestionService(
+            RelayProperties relayProperties,
+            SignatureVerifier signatureVerifier,
+            ReporterStakeChecker reporterStakeChecker
+    ) {
         this.relayProperties = relayProperties;
+        this.signatureVerifier = signatureVerifier;
+        this.reporterStakeChecker = reporterStakeChecker;
     }
 
     public ReadingAcceptedResponse ingest(ReadingSubmissionRequest request) {
@@ -28,11 +38,32 @@ public class ReadingIngestionService {
         validateTimestampFreshness(request.timestamp(), now);
         validateH3Resolution(request.h3Index());
         enforceReporterRateLimit(request.reporter(), now);
+        validateSignature(request);
+        validateReporterStake(request.reporter());
 
-        // TODO: EIP-712 signature verification and reporter stake checks.
         long epochDuration = Math.max(1, relayProperties.epoch().durationSeconds());
         long epochId = now / epochDuration;
         return new ReadingAcceptedResponse("accepted", epochId, now);
+    }
+
+    private void validateSignature(ReadingSubmissionRequest request) {
+        if (!relayProperties.security().signatureVerificationEnabled()) {
+            return;
+        }
+
+        if (!signatureVerifier.verify(request)) {
+            throw RelayApiException.badRequest("invalid signature");
+        }
+    }
+
+    private void validateReporterStake(String reporter) {
+        if (!relayProperties.security().stakeCheckEnabled()) {
+            return;
+        }
+
+        if (!reporterStakeChecker.hasActiveStake(reporter)) {
+            throw RelayApiException.unauthorized("reporter has no active stake");
+        }
     }
 
     private void validateMandatoryFields(ReadingSubmissionRequest request) {

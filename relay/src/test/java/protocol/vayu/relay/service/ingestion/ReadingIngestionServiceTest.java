@@ -1,4 +1,4 @@
-package protocol.vayu.relay.service;
+package protocol.vayu.relay.service.ingestion;
 
 import org.junit.jupiter.api.Test;
 import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
@@ -16,7 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ReadingIngestionServiceTest {
 
-    private final ReadingIngestionService service = new ReadingIngestionService(relayProperties());
+    private final ReadingIngestionService service = new ReadingIngestionService(
+            relayProperties(false, false),
+            request -> true,
+            reporter -> true
+    );
 
     @Test
     void ingestShouldAcceptValidReading() {
@@ -114,6 +118,46 @@ class ReadingIngestionServiceTest {
         assertTrue(ex.retryAfter() <= 300);
     }
 
+        @Test
+        void ingestShouldRejectInvalidSignatureWhenVerificationEnabled() {
+        ReadingIngestionService strictService = new ReadingIngestionService(
+            relayProperties(true, false),
+            request -> false,
+            reporter -> true
+        );
+
+        ReadingSubmissionRequest request = validRequest(
+            "0x6666666666666666666666666666666666666666",
+            Instant.now().getEpochSecond()
+        );
+
+        RelayApiException ex = assertThrows(RelayApiException.class, () -> strictService.ingest(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status());
+        assertEquals("invalid_request", ex.errorCode());
+        assertEquals("invalid signature", ex.getMessage());
+        }
+
+        @Test
+        void ingestShouldRejectReporterWithNoStakeWhenStakeCheckEnabled() {
+        ReadingIngestionService strictService = new ReadingIngestionService(
+            relayProperties(false, true),
+            request -> true,
+            reporter -> false
+        );
+
+        ReadingSubmissionRequest request = validRequest(
+            "0x7777777777777777777777777777777777777777",
+            Instant.now().getEpochSecond()
+        );
+
+        RelayApiException ex = assertThrows(RelayApiException.class, () -> strictService.ingest(request));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.status());
+        assertEquals("unauthorized", ex.errorCode());
+        assertEquals("reporter has no active stake", ex.getMessage());
+        }
+
     private ReadingSubmissionRequest validRequest(String reporter, long timestamp) {
         return new ReadingSubmissionRequest(
                 reporter,
@@ -134,7 +178,7 @@ class ReadingIngestionServiceTest {
         return "0x111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111b";
     }
 
-    private static RelayProperties relayProperties() {
+    private static RelayProperties relayProperties(boolean signatureVerificationEnabled, boolean stakeCheckEnabled) {
         RelayProperties.Messages messages = new RelayProperties.Messages(
                 "aqi must be greater than %d",
                 "pm25 must be greater than %d",
@@ -155,6 +199,10 @@ class ReadingIngestionServiceTest {
         );
 
         RelayProperties.Epoch epoch = new RelayProperties.Epoch(3600, 60000, 300);
-        return new RelayProperties(epoch, validation);
+        RelayProperties.Security security = new RelayProperties.Security(
+            signatureVerificationEnabled,
+            stakeCheckEnabled
+        );
+        return new RelayProperties(epoch, validation, security);
     }
 }

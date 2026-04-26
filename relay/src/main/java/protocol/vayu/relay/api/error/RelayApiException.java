@@ -23,6 +23,10 @@ public class RelayApiException extends RuntimeException {
         return new RelayApiException(HttpStatus.TOO_MANY_REQUESTS, "rate_limited", message, retryAfter);
     }
 
+    public static RelayApiException unauthorized(String message) {
+        return new RelayApiException(HttpStatus.UNAUTHORIZED, "unauthorized", message, null);
+    }
+
     public HttpStatus status() {
         return status;
     }
