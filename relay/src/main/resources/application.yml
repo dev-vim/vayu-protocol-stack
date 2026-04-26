@@ -16,3 +16,17 @@ relay:
     duration-seconds: 3600
     commit-check-interval-ms: 60000
     timestamp-tolerance-seconds: 300
+  validation:
+    required-h3-resolution: 8
+    rate-limit-window-seconds: 300
+    min-aqi: 1
+    min-pm25: 1
+    messages:
+      aqi-min: "aqi must be greater than %d"
+      pm25-min: "pm25 must be greater than %d"
+      timestamp-required: "timestamp is required"
+      timestamp-tolerance: "timestamp is outside allowed tolerance window"
+      h3-format: "h3Index must be a 64-bit hex string"
+      h3-hex: "h3Index must be valid hex"
+      h3-resolution: "h3Index resolution must be %d"
+      rate-limit: "reporter can submit once every %d seconds"
