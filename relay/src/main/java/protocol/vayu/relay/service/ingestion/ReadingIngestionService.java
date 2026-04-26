@@ -36,14 +36,13 @@ public class ReadingIngestionService {
 
         validateMandatoryFields(request);
         validateTimestampFreshness(request.timestamp(), now);
+        validateEpochConsistency(request.epochId(), request.timestamp());
         validateH3Resolution(request.h3Index());
         enforceReporterRateLimit(request.reporter(), now);
         validateSignature(request);
         validateReporterStake(request.reporter());
 
-        long epochDuration = Math.max(1, relayProperties.epoch().durationSeconds());
-        long epochId = now / epochDuration;
-        return new ReadingAcceptedResponse("accepted", epochId, now);
+        return new ReadingAcceptedResponse("accepted", request.epochId(), now);
     }
 
     private void validateSignature(ReadingSubmissionRequest request) {
@@ -86,6 +85,18 @@ public class ReadingIngestionService {
         long tolerance = Math.max(0, relayProperties.epoch().timestampToleranceSeconds());
         if (Math.abs(now - timestamp) > tolerance) {
             throw RelayApiException.badRequest(relayProperties.validation().messages().timestampTolerance());
+        }
+    }
+
+    private void validateEpochConsistency(Long epochId, Long timestamp) {
+        if (epochId == null || timestamp == null) {
+            return;
+        }
+
+        long epochDuration = Math.max(1, relayProperties.epoch().durationSeconds());
+        long expectedEpochId = timestamp / epochDuration;
+        if (epochId != expectedEpochId) {
+            throw RelayApiException.badRequest(relayProperties.validation().messages().epochIdMismatch());
         }
     }
 

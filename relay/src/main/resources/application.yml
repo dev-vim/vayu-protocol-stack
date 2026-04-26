@@ -26,6 +26,7 @@ relay:
       pm25-min: "pm25 must be greater than %d"
       timestamp-required: "timestamp is required"
       timestamp-tolerance: "timestamp is outside allowed tolerance window"
+      epoch-id-mismatch: "epochId does not match timestamp and epoch duration"
       h3-format: "h3Index must be a 64-bit hex string"
       h3-hex: "h3Index must be valid hex"
       h3-resolution: "h3Index resolution must be %d"
@@ -33,3 +34,8 @@ relay:
   security:
     signature-verification-enabled: false
     stake-check-enabled: false
+    eip712:
+      domain-name: "VayuProtocol"
+      domain-version: "1"
+      chain-id: 84532
+      verifying-contract: "0x0000000000000000000000000000000000000000"

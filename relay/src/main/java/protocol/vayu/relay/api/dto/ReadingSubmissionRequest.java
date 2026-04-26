@@ -16,6 +16,15 @@ public record ReadingSubmissionRequest(
         String h3Index,
 
         @NotNull
+        @Min(0)
+        @Max(4294967295L)
+        Long epochId,
+
+        @NotNull
+        @Min(1)
+        Long timestamp,
+
+        @NotNull
         @Min(1)
         @Max(500)
         Integer aqi,
@@ -44,10 +53,6 @@ public record ReadingSubmissionRequest(
         @Min(0)
         @Max(65535)
         Integer co,
-
-        @NotNull
-        @Min(1)
-        Long timestamp,
 
         @NotBlank
         @Pattern(regexp = "^0x[0-9a-fA-F]{130}$")

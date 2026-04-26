@@ -41,6 +41,8 @@ class ReadingIngestionServiceTest {
         ReadingSubmissionRequest request = new ReadingSubmissionRequest(
                 "0x2222222222222222222222222222222222222222",
                 "0x0882830a1fffffff",
+            Instant.now().getEpochSecond() / 3600,
+            Instant.now().getEpochSecond(),
                 0,
                 300,
                 null,
@@ -48,7 +50,6 @@ class ReadingIngestionServiceTest {
                 null,
                 null,
                 null,
-                Instant.now().getEpochSecond(),
                 signature()
         );
 
@@ -79,6 +80,8 @@ class ReadingIngestionServiceTest {
         ReadingSubmissionRequest request = new ReadingSubmissionRequest(
                 "0x4444444444444444444444444444444444444444",
                 "0x0872830a1fffffff",
+            Instant.now().getEpochSecond() / 3600,
+            Instant.now().getEpochSecond(),
                 120,
                 350,
                 null,
@@ -86,7 +89,6 @@ class ReadingIngestionServiceTest {
                 null,
                 null,
                 null,
-                Instant.now().getEpochSecond(),
                 signature()
         );
 
@@ -156,12 +158,16 @@ class ReadingIngestionServiceTest {
         assertEquals(HttpStatus.UNAUTHORIZED, ex.status());
         assertEquals("unauthorized", ex.errorCode());
         assertEquals("reporter has no active stake", ex.getMessage());
-        }
+    }
 
-    private ReadingSubmissionRequest validRequest(String reporter, long timestamp) {
-        return new ReadingSubmissionRequest(
-                reporter,
+    @Test
+    void ingestShouldRejectEpochIdMismatch() {
+        long now = Instant.now().getEpochSecond();
+        ReadingSubmissionRequest request = new ReadingSubmissionRequest(
+                "0x8888888888888888888888888888888888888888",
                 "0x0882830a1fffffff",
+                (now / 3600) + 1,
+            now,
                 120,
                 350,
                 null,
@@ -169,7 +175,29 @@ class ReadingIngestionServiceTest {
                 null,
                 null,
                 null,
-                timestamp,
+                signature()
+        );
+
+        RelayApiException ex = assertThrows(RelayApiException.class, () -> service.ingest(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status());
+        assertEquals("invalid_request", ex.errorCode());
+        assertEquals("epochId does not match timestamp and epoch duration", ex.getMessage());
+    }
+
+    private ReadingSubmissionRequest validRequest(String reporter, long timestamp) {
+        return new ReadingSubmissionRequest(
+                reporter,
+                "0x0882830a1fffffff",
+                timestamp / 3600,
+            timestamp,
+                120,
+                350,
+                null,
+                null,
+                null,
+                null,
+                null,
                 signature()
         );
     }
@@ -184,6 +212,7 @@ class ReadingIngestionServiceTest {
                 "pm25 must be greater than %d",
                 "timestamp is required",
                 "timestamp is outside allowed tolerance window",
+            "epochId does not match timestamp and epoch duration",
                 "h3Index must be a 64-bit hex string",
                 "h3Index must be valid hex",
                 "h3Index resolution must be %d",
@@ -199,9 +228,16 @@ class ReadingIngestionServiceTest {
         );
 
         RelayProperties.Epoch epoch = new RelayProperties.Epoch(3600, 60000, 300);
+        RelayProperties.Eip712 eip712 = new RelayProperties.Eip712(
+            "VayuProtocol",
+            "1",
+            84532,
+            "0x0000000000000000000000000000000000000000"
+        );
         RelayProperties.Security security = new RelayProperties.Security(
             signatureVerificationEnabled,
-            stakeCheckEnabled
+            stakeCheckEnabled,
+            eip712
         );
         return new RelayProperties(epoch, validation, security);
     }

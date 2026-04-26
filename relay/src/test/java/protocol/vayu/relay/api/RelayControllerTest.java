@@ -36,6 +36,7 @@ class RelayControllerTest {
         String payload = payload(
                 "0x1111111111111111111111111111111111111111",
                 "0x0882830a1fffffff",
+                now / 3600,
                 148,
                 453,
                 now,
@@ -55,9 +56,10 @@ class RelayControllerTest {
                 {
                   "reporter": "0xINVALID",
                   "h3Index": "0x1",
+                                                                        "epochId": 0,
+                                                                        "timestamp": 0,
                   "aqi": 0,
                   "pm25": 0,
-                  "timestamp": 0,
                   "signature": "0x1234"
                 }
                 """;
@@ -75,6 +77,7 @@ class RelayControllerTest {
         String payload = payload(
                 "0x2222222222222222222222222222222222222222",
                 "0x0882830a1fffffff",
+                staleTimestamp / 3600,
                 148,
                 453,
                 staleTimestamp,
@@ -94,6 +97,7 @@ class RelayControllerTest {
         String payload = payload(
                 "0x3333333333333333333333333333333333333333",
                 "0x0872830a1fffffff",
+                now / 3600,
                 148,
                 453,
                 now,
@@ -113,6 +117,7 @@ class RelayControllerTest {
         String payload = payload(
                 "0x4444444444444444444444444444444444444444",
                 "0x0882830a1fffffff",
+                now / 3600,
                 180,
                 500,
                 now,
@@ -138,6 +143,7 @@ class RelayControllerTest {
         String payload = payload(
                 "0x5555555555555555555555555555555555555555",
                 "0x0882830a1fffffff",
+                futureTimestamp / 3600,
                 170,
                 490,
                 futureTimestamp,
@@ -157,6 +163,7 @@ class RelayControllerTest {
         String payload = payload(
                 "0x6666666666666666666666666666666666666666",
                 "0x0882830a1fffffff",
+                now / 3600,
                 101,
                 251,
                 now,
@@ -170,9 +177,30 @@ class RelayControllerTest {
                 .andExpect(jsonPath("$.status").value("accepted"));
     }
 
+    @Test
+    void submitReadingShouldRejectEpochIdMismatch() throws Exception {
+        long now = Instant.now().getEpochSecond();
+        String payload = payload(
+                "0x7777777777777777777777777777777777777777",
+                "0x0882830a1fffffff",
+                (now / 3600) + 1,
+                110,
+                260,
+                now,
+                false
+        );
+
+        mockMvc.perform(post("/v1/readings")
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_request"));
+    }
+
     private static String payload(
             String reporter,
             String h3Index,
+            long epochId,
             int aqi,
             int pm25,
             long timestamp,
@@ -186,11 +214,12 @@ class RelayControllerTest {
                 {
                   "reporter": "%s",
                   "h3Index": "%s",
+                                                                        "epochId": %d,
+                                                                        "timestamp": %d,
                   "aqi": %d,
                   "pm25": %d,%s
-                  "timestamp": %d,
                   "signature": "0x111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111b"
                 }
-                """.formatted(reporter, h3Index, aqi, pm25, optional, timestamp);
+                                                                """.formatted(reporter, h3Index, epochId, timestamp, aqi, pm25, optional);
     }
 }
