@@ -33,7 +33,7 @@ class DefaultEpochAggregatorTest {
                 .orElseThrow();
 
         assertEquals(2, firstCell.readingCount());
-        assertEquals(150, firstCell.avgAqi());
+        assertEquals(150, firstCell.medianAqi());
         assertEquals(250, firstCell.avgPm25());
         assertEquals(5, firstCell.avgPm10());
     }

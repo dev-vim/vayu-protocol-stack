@@ -16,6 +16,9 @@ relay:
     duration-seconds: 3600
     commit-check-interval-ms: 60000
     timestamp-tolerance-seconds: 300
+    min-reporters-per-cell: 3
+    scoring-tolerance-aqi: 50
+    epoch-budget-wei: 684931506849315068493
   validation:
     required-h3-resolution: 8
     rate-limit-window-seconds: 300

@@ -10,13 +10,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Basic scaffold aggregator. Computes per-cell arithmetic mean (not median),
+ * does not score reporters, does not build Merkle trees, and does not derive
+ * the penalty list. Suitable for development/testing only.
+ *
+ * @see ProtocolEpochAggregator for the protocol-compliant implementation.
+ */
 @Component
 public class DefaultEpochAggregator implements EpochAggregator {
 
     @Override
     public EpochAggregate aggregate(long epochId, List<ReadingSubmissionRequest> readings) {
         if (readings == null || readings.isEmpty()) {
-            return new EpochAggregate(epochId, 0, 0, List.of());
+            return new EpochAggregate(epochId, 0, 0, List.of(), 0, List.of(), null, null, List.of());
         }
 
         Map<String, Stats> perCell = new LinkedHashMap<>();
@@ -33,7 +40,8 @@ public class DefaultEpochAggregator implements EpochAggregator {
             cells.add(entry.getValue().toAggregate(entry.getKey()));
         }
 
-        return new EpochAggregate(epochId, readings.size(), uniqueReporters.size(), cells);
+        return new EpochAggregate(epochId, readings.size(), uniqueReporters.size(), cells,
+                0, List.of(), null, null, List.of());
     }
 
     private static final class Stats {
@@ -48,26 +56,28 @@ public class DefaultEpochAggregator implements EpochAggregator {
 
         private void add(ReadingSubmissionRequest reading) {
             readingCount++;
-            sumAqi += reading.aqi();
+            sumAqi  += reading.aqi();
             sumPm25 += reading.pm25();
             sumPm10 += orZero(reading.pm10());
-            sumO3 += orZero(reading.o3());
-            sumNo2 += orZero(reading.no2());
-            sumSo2 += orZero(reading.so2());
-            sumCo += orZero(reading.co());
+            sumO3   += orZero(reading.o3());
+            sumNo2  += orZero(reading.no2());
+            sumSo2  += orZero(reading.so2());
+            sumCo   += orZero(reading.co());
         }
 
         private CellAggregate toAggregate(String h3Index) {
             return new CellAggregate(
                     h3Index,
                     readingCount,
-                    avg(sumAqi),
+                    false,          // active not computed by this aggregator
+                    avg(sumAqi),    // medianAqi field — approximated as mean here
                     avg(sumPm25),
                     avg(sumPm10),
                     avg(sumO3),
                     avg(sumNo2),
                     avg(sumSo2),
-                    avg(sumCo)
+                    avg(sumCo),
+                    List.of()       // reporterScores not computed
             );
         }
 

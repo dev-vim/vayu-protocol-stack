@@ -174,7 +174,7 @@ class Eip712SignatureVerifierTest {
                 messages
         );
 
-        RelayProperties.Epoch epoch = new RelayProperties.Epoch(3600, 60000, 300);
+        RelayProperties.Epoch epoch = new RelayProperties.Epoch(3600, 60000, 300, 3, 50, new java.math.BigInteger("684931506849315068493"));
         RelayProperties.Eip712 eip712 = new RelayProperties.Eip712(
             "VayuProtocol",
                 "1",

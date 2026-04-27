@@ -15,16 +15,29 @@ public class LoggingEpochCommitPublisher implements EpochCommitPublisher {
     @Override
     public CommitPublication publish(EpochAggregate aggregate) {
         long submittedAt = Instant.now().getEpochSecond();
-        String payload = aggregate.epochId() + ":" + aggregate.totalReadings() + ":" + aggregate.uniqueReporters()
-                + ":" + aggregate.cells().size() + ":" + submittedAt;
+
+        String dataRootHex  = aggregate.dataRoot()   != null
+                ? org.web3j.utils.Numeric.toHexString(aggregate.dataRoot())   : "(none)";
+        String rewardRootHex = aggregate.rewardRoot() != null
+                ? org.web3j.utils.Numeric.toHexString(aggregate.rewardRoot()) : "(none)";
+
+        // Produce a deterministic stub tx-hash from the aggregate metadata.
+        // Replace with a real web3j contract call in the production publisher.
+        String payload = aggregate.epochId() + ":" + aggregate.totalReadings() + ":"
+                + aggregate.uniqueReporters() + ":" + aggregate.cells().size() + ":" + submittedAt;
         String txHash = Hash.sha3String(payload);
 
         LOG.info(
-                "epoch commit published: epochId={}, totalReadings={}, uniqueReporters={}, cells={}, txHash={}",
+                "epoch commit published: epochId={}, totalReadings={}, activeCells={}/{}, " +
+                "rewards={}, penalty={}, dataRoot={}, rewardRoot={}, txHash={}",
                 aggregate.epochId(),
                 aggregate.totalReadings(),
-                aggregate.uniqueReporters(),
+                aggregate.activeCells(),
                 aggregate.cells().size(),
+                aggregate.rewards().size(),
+                aggregate.penaltyList().size(),
+                dataRootHex,
+                rewardRootHex,
                 txHash
         );
 
