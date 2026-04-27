@@ -5,6 +5,7 @@ import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
+import protocol.vayu.relay.service.commit.InMemoryEpochReadingStore;
 import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
@@ -183,6 +184,29 @@ class ReadingIngestionServiceTest {
         assertEquals(HttpStatus.BAD_REQUEST, ex.status());
         assertEquals("invalid_request", ex.errorCode());
         assertEquals("epochId does not match timestamp and epoch duration", ex.getMessage());
+    }
+
+    @Test
+    void ingestShouldQueueAcceptedReadingForCommitCycle() {
+        InMemoryEpochReadingStore store = new InMemoryEpochReadingStore();
+        ReadingIngestionService queueingService = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                store
+        );
+
+        ReadingSubmissionRequest request = validRequest(
+                "0x9999999999999999999999999999999999999999",
+                Instant.now().getEpochSecond()
+        );
+
+        ReadingAcceptedResponse response = queueingService.ingest(request);
+
+        assertEquals("accepted", response.status());
+        assertEquals(1, store.pendingReadings());
+        assertEquals(1, store.drainEpoch(request.epochId()).size());
+        assertEquals(0, store.pendingReadings());
     }
 
     private ReadingSubmissionRequest validRequest(String reporter, long timestamp) {

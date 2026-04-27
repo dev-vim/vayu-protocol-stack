@@ -4,8 +4,10 @@ import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
+import protocol.vayu.relay.service.commit.EpochReadingStore;
 import protocol.vayu.relay.service.ingestion.security.ReporterStakeChecker;
 import protocol.vayu.relay.service.ingestion.security.SignatureVerifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -19,16 +21,43 @@ public class ReadingIngestionService {
     private final RelayProperties relayProperties;
     private final SignatureVerifier signatureVerifier;
     private final ReporterStakeChecker reporterStakeChecker;
+    private final EpochReadingStore epochReadingStore;
     private final ConcurrentMap<String, Long> reporterLastReading = new ConcurrentHashMap<>();
 
+    @Autowired
     public ReadingIngestionService(
             RelayProperties relayProperties,
             SignatureVerifier signatureVerifier,
-            ReporterStakeChecker reporterStakeChecker
+            ReporterStakeChecker reporterStakeChecker,
+            EpochReadingStore epochReadingStore
     ) {
         this.relayProperties = relayProperties;
         this.signatureVerifier = signatureVerifier;
         this.reporterStakeChecker = reporterStakeChecker;
+        this.epochReadingStore = epochReadingStore;
+    }
+
+    ReadingIngestionService(
+            RelayProperties relayProperties,
+            SignatureVerifier signatureVerifier,
+            ReporterStakeChecker reporterStakeChecker
+    ) {
+        this(relayProperties, signatureVerifier, reporterStakeChecker, new EpochReadingStore() {
+            @Override
+            public void enqueue(ReadingSubmissionRequest request) {
+                // No-op fallback constructor used by lightweight unit tests.
+            }
+
+            @Override
+            public java.util.List<ReadingSubmissionRequest> drainEpoch(long epochId) {
+                return java.util.List.of();
+            }
+
+            @Override
+            public int pendingReadings() {
+                return 0;
+            }
+        });
     }
 
     public ReadingAcceptedResponse ingest(ReadingSubmissionRequest request) {
@@ -41,6 +70,7 @@ public class ReadingIngestionService {
         enforceReporterRateLimit(request.reporter(), now);
         validateSignature(request);
         validateReporterStake(request.reporter());
+        epochReadingStore.enqueue(request);
 
         return new ReadingAcceptedResponse("accepted", request.epochId(), now);
     }
