@@ -30,7 +30,7 @@ public class InMemoryPenaltyTracker implements PenaltyTracker {
         for (Map.Entry<String, Double> entry : reporterScores.entrySet()) {
             String reporter = entry.getKey();
             if (entry.getValue() == 0.0) {
-                consecutiveZeros.merge(reporter, 1, Integer::sum);
+                consecutiveZeros.compute(reporter, (key, count) -> count == null ? 1 : count + 1);
             } else {
                 consecutiveZeros.put(reporter, 0);
             }
