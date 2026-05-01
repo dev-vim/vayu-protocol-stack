@@ -318,6 +318,170 @@ class ProtocolEpochAggregatorTest {
         return new RelayProperties(epoch, validation, security);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Multi-cell scenarios
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void twoActiveCellsShouldBothBeCountedInActiveCells() {
+        String cellA = "0x0882830a1fffffff";
+        String cellB = "0x0882830b1fffffff";
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading("0x1111111111111111111111111111111111111111", cellA, 100),
+                reading("0x2222222222222222222222222222222222222222", cellA, 100),
+                reading("0x3333333333333333333333333333333333333333", cellA, 100),
+                reading("0x4444444444444444444444444444444444444444", cellB, 100),
+                reading("0x5555555555555555555555555555555555555555", cellB, 100),
+                reading("0x6666666666666666666666666666666666666666", cellB, 100)
+        );
+
+        EpochAggregate result = aggregator.aggregate(EPOCH_ID, readings);
+
+        assertEquals(2, result.activeCells());
+        assertEquals(2, result.cells().size());
+        assertTrue(result.cells().stream().allMatch(CellAggregate::active));
+    }
+
+    @Test
+    void rewardBudgetShouldBeSplitAcrossTwoActiveCells() {
+        String cellA = "0x0882830a1fffffff";
+        String cellB = "0x0882830b1fffffff";
+        // All reporters score 1.0 (AQI = cell median exactly)
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading("0x1111111111111111111111111111111111111111", cellA, 100),
+                reading("0x2222222222222222222222222222222222222222", cellA, 100),
+                reading("0x3333333333333333333333333333333333333333", cellA, 100),
+                reading("0x4444444444444444444444444444444444444444", cellB, 200),
+                reading("0x5555555555555555555555555555555555555555", cellB, 200),
+                reading("0x6666666666666666666666666666666666666666", cellB, 200)
+        );
+
+        EpochAggregate result = aggregator.aggregate(EPOCH_ID, readings);
+
+        // 6 rewards (3 per active cell)
+        assertEquals(6, result.rewards().size());
+
+        // Total rewards must not exceed the 98% reward budget
+        BigInteger rewardBudget = EPOCH_BUDGET
+                .multiply(BigInteger.valueOf(9800))
+                .divide(BigInteger.valueOf(10000));
+        BigInteger total = result.rewards().stream()
+                .map(ReporterReward::amount)
+                .reduce(BigInteger.ZERO, BigInteger::add);
+        assertTrue(total.compareTo(rewardBudget) <= 0,
+                "Total rewards " + total + " must not exceed reward budget " + rewardBudget);
+        // Rewards should consume at least 99% of budget (checking no rounding leak)
+        BigInteger lowerBound = rewardBudget.multiply(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
+        assertTrue(total.compareTo(lowerBound) >= 0,
+                "Total rewards " + total + " unexpectedly far below budget");
+    }
+
+    @Test
+    void mixedActiveCellAndInactiveCellShouldOnlyCountActiveOne() {
+        String activeCell   = "0x0882830a1fffffff";  // 3 reporters → active
+        String inactiveCell = "0x0882830b1fffffff";  // 2 reporters → inactive
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading("0x1111111111111111111111111111111111111111", activeCell, 100),
+                reading("0x2222222222222222222222222222222222222222", activeCell, 100),
+                reading("0x3333333333333333333333333333333333333333", activeCell, 100),
+                reading("0x4444444444444444444444444444444444444444", inactiveCell, 100),
+                reading("0x5555555555555555555555555555555555555555", inactiveCell, 100)
+        );
+
+        EpochAggregate result = aggregator.aggregate(EPOCH_ID, readings);
+
+        assertEquals(1, result.activeCells());
+        assertEquals(3, result.rewards().size());  // only active cell reporters rewarded
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Reading and reporter counts
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void totalReadingsAndUniqueReporterCountsShouldBeCorrect() {
+        String cellA = "0x0882830a1fffffff";
+        String cellB = "0x0882830b1fffffff";
+        String r1 = "0x1111111111111111111111111111111111111111";
+        // R1 appears in both cells; R2-R5 appear once each
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading(r1, cellA, 100),
+                reading("0x2222222222222222222222222222222222222222", cellA, 100),
+                reading("0x3333333333333333333333333333333333333333", cellA, 100),
+                reading(r1, cellB, 100),
+                reading("0x4444444444444444444444444444444444444444", cellB, 100)
+        );
+
+        EpochAggregate result = aggregator.aggregate(EPOCH_ID, readings);
+
+        assertEquals(5, result.totalReadings());
+        // R1 appears twice but is counted once as unique reporter
+        assertEquals(4, result.uniqueReporters());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Zero-score edge cases
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void activeCellWhereAllReportersScoreZeroShouldProduceNoRewards() {
+        // 4 reporters: [100, 100, 200, 200] → median = (100+200)/2 = 150
+        // Each reporter is exactly 50 from median (= tolerance) → score = max(0, 1-1) = 0
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading("0x1111111111111111111111111111111111111111", "0x0882830a1fffffff", 100),
+                reading("0x2222222222222222222222222222222222222222", "0x0882830a1fffffff", 100),
+                reading("0x3333333333333333333333333333333333333333", "0x0882830a1fffffff", 200),
+                reading("0x4444444444444444444444444444444444444444", "0x0882830a1fffffff", 200)
+        );
+
+        EpochAggregate result = aggregator.aggregate(EPOCH_ID, readings);
+
+        assertEquals(1, result.activeCells());
+        assertTrue(result.rewards().isEmpty(),
+                "No rewards expected when all reporters score exactly zero");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Inactive cell reporters and penalty tracking
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void inactiveCellReportersShouldNeverAccumulatePenaltyStreak() {
+        // Only 2 reporters in the cell — cell stays inactive every epoch
+        String inactiveCell = "0x0882830b1fffffff";
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading("0x1111111111111111111111111111111111111111", inactiveCell, 50),
+                reading("0x2222222222222222222222222222222222222222", inactiveCell, 50)
+        );
+
+        // Run well past the penalty threshold
+        EpochAggregate last = null;
+        for (int i = 0; i <= InMemoryPenaltyTracker.THRESHOLD + 1; i++) {
+            last = aggregator.aggregate(EPOCH_ID + i, readings);
+        }
+
+        assertTrue(last.penaltyList().isEmpty(),
+                "Reporters in inactive cells must not accumulate a zero-score streak");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Static helper: median edge cases
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void medianOfSingleElementShouldReturnThatElement() {
+        assertEquals(42, ProtocolEpochAggregator.median(new int[]{42}));
+    }
+
+    @Test
+    void medianShouldBeStableRegardlessOfInputOrder() {
+        // [300, 100, 200] and [100, 200, 300] should yield the same median (200)
+        assertEquals(
+                ProtocolEpochAggregator.median(new int[]{100, 200, 300}),
+                ProtocolEpochAggregator.median(new int[]{300, 100, 200})
+        );
+    }
+
     private static boolean isAllZeros(byte[] bytes) {
         for (byte b : bytes) {
             if (b != 0) return false;

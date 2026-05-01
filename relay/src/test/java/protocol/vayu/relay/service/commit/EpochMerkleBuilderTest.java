@@ -161,8 +161,148 @@ class EpochMerkleBuilderTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Empty-input roots
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void buildDataRootWithEmptyListShouldReturnAllZeros() {
+        byte[] root = EpochMerkleBuilder.buildDataRoot(List.of());
+
+        assertEquals(32, root.length);
+        for (byte b : root) assertEquals(0, b);
+    }
+
+    @Test
+    void buildRewardRootWithEmptyListShouldReturnAllZeros() {
+        byte[] root = EpochMerkleBuilder.buildRewardRoot(List.of(), 100L);
+
+        assertEquals(32, root.length);
+        for (byte b : root) assertEquals(0, b);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Odd-leaf tree (node promotion)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void buildDataRootWithThreeLeavesShouldProduceNonZeroRoot() {
+        // OZ scheme with 3 leaves: round 1 = [hash(leaf1,leaf2), leaf3 promoted]
+        //                           root    = hash(above pair, leaf3)
+        ReadingSubmissionRequest r1 = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 100L, 100, 200);
+        ReadingSubmissionRequest r2 = reading("0x2222222222222222222222222222222222222222",
+                "0x0882830a1fffffff", 100L, 110, 200);
+        ReadingSubmissionRequest r3 = reading("0x3333333333333333333333333333333333333333",
+                "0x0882830a1fffffff", 100L, 120, 200);
+
+        byte[] root = EpochMerkleBuilder.buildDataRoot(List.of(r1, r2, r3));
+
+        assertEquals(32, root.length);
+        assertFalse(isAllZeros(root));
+    }
+
+    @Test
+    void buildDataRootWithThreeLeavesShouldBeOrderIndependent() {
+        ReadingSubmissionRequest r1 = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 100L, 100, 200);
+        ReadingSubmissionRequest r2 = reading("0x2222222222222222222222222222222222222222",
+                "0x0882830a1fffffff", 100L, 110, 200);
+        ReadingSubmissionRequest r3 = reading("0x3333333333333333333333333333333333333333",
+                "0x0882830a1fffffff", 100L, 120, 200);
+
+        byte[] root1 = EpochMerkleBuilder.buildDataRoot(List.of(r1, r2, r3));
+        byte[] root2 = EpochMerkleBuilder.buildDataRoot(List.of(r3, r1, r2));
+        byte[] root3 = EpochMerkleBuilder.buildDataRoot(List.of(r2, r3, r1));
+
+        assertArrayEquals(root1, root2);
+        assertArrayEquals(root1, root3);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DATA leaf field sensitivity
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void dataLeafShouldDifferWhenReporterChanges() {
+        ReadingSubmissionRequest base = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 100L, 100, 200);
+        ReadingSubmissionRequest different = reading("0x2222222222222222222222222222222222222222",
+                "0x0882830a1fffffff", 100L, 100, 200);
+
+        assertNotEquals(
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeaf(base)),
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeaf(different))
+        );
+    }
+
+    @Test
+    void dataLeafShouldDifferWhenH3IndexChanges() {
+        ReadingSubmissionRequest base = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 100L, 100, 200);
+        ReadingSubmissionRequest different = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830b1fffffff", 100L, 100, 200);
+
+        assertNotEquals(
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeaf(base)),
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeaf(different))
+        );
+    }
+
+    @Test
+    void dataLeafShouldDifferWhenPm25Changes() {
+        ReadingSubmissionRequest base = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 100L, 100, 200);
+        ReadingSubmissionRequest different = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 100L, 100, 201);
+
+        assertNotEquals(
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeaf(base)),
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeaf(different))
+        );
+    }
+
+    @Test
+    void dataLeafShouldDifferWhenEpochIdChanges() {
+        ReadingSubmissionRequest base = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 100L, 100, 200);
+        ReadingSubmissionRequest different = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 101L, 100, 200);
+
+        assertNotEquals(
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeaf(base)),
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeaf(different))
+        );
+    }
+
+    @Test
+    void dataLeafSortKeyShouldDifferForDifferentReporterOrH3Index() {
+        ReadingSubmissionRequest r1 = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830a1fffffff", 100L, 100, 200);
+        ReadingSubmissionRequest r2 = reading("0x2222222222222222222222222222222222222222",
+                "0x0882830a1fffffff", 100L, 100, 200);
+        ReadingSubmissionRequest r3 = reading("0x1111111111111111111111111111111111111111",
+                "0x0882830b1fffffff", 100L, 100, 200);
+
+        assertNotEquals(
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeafSortKey(r1)),
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeafSortKey(r2))
+        );
+        assertNotEquals(
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeafSortKey(r1)),
+                org.web3j.utils.Numeric.toHexString(EpochMerkleBuilder.dataLeafSortKey(r3))
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helper
     // ─────────────────────────────────────────────────────────────────────────
+
+    private static boolean isAllZeros(byte[] bytes) {
+        for (byte b : bytes) {
+            if (b != 0) return false;
+        }
+        return true;
+    }
 
     private static ReadingSubmissionRequest reading(
             String reporter, String h3Index, long epochId, int aqi, int pm25) {
