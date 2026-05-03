@@ -42,3 +42,10 @@ relay:
       domain-version: "1"
       chain-id: 84532
       verifying-contract: "0x0000000000000000000000000000000000000000"
+  ipfs:
+    # "kubo" for local dev node (docker run -p 5001:5001 ipfs/kubo)
+    # "pinata" for production managed pinning
+    provider: kubo
+    kubo-api-url: "http://localhost:5001"
+    # Set RELAY_IPFS_PINATA_JWT env var in production when provider=pinata
+    pinata-jwt: ""

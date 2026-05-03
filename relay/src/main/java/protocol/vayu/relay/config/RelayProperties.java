@@ -3,7 +3,7 @@ package protocol.vayu.relay.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "relay")
-public record RelayProperties(Epoch epoch, Validation validation, Security security) {
+public record RelayProperties(Epoch epoch, Validation validation, Security security, Ipfs ipfs) {
 
     public record Epoch(
             long durationSeconds,
@@ -47,5 +47,20 @@ public record RelayProperties(Epoch epoch, Validation validation, Security secur
     }
 
     public record Eip712(String domainName, String domainVersion, long chainId, String verifyingContract) {
+    }
+
+    /**
+     * IPFS pinning configuration.
+     * {@code provider} selects the active implementation: {@code kubo} (local node, default)
+     * or {@code pinata} (managed service).
+     */
+    public record Ipfs(
+            /** Active IPFS provider: "kubo" or "pinata". Defaults to "kubo". */
+            String provider,
+            /** Base URL of the Kubo RPC API, e.g. http://localhost:5001 */
+            String kuboApiUrl,
+            /** Pinata API JWT (Bearer token). Set via RELAY_IPFS_PINATA_JWT env var in prod. */
+            String pinataJwt
+    ) {
     }
 }
