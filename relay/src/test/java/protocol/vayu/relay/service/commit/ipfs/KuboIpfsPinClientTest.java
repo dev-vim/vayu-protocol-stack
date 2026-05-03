@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
+import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -42,7 +43,7 @@ class KuboIpfsPinClientTest {
     void pinShouldReturnCidFromHashField() {
         String kuboResponse = "{\"Name\":\"epoch-42.json\",\"Hash\":\"QmTestCidAbc123\",\"Size\":\"42\"}";
         server.expect(requestTo(ADD_ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withSuccess(kuboResponse, MediaType.APPLICATION_JSON));
 
         String cid = client.pin(EPOCH_ID, JSON_BLOB);
@@ -56,7 +57,7 @@ class KuboIpfsPinClientTest {
         String cid = "bafkreidivzimqfqtoqsvtkpvne6wieacgg2qtd3gkbktzbike4b7f5bfii";
         String kuboResponse = "{\"Name\":\"epoch-42.json\",\"Hash\":\"" + cid + "\",\"Size\":\"1234\"}";
         server.expect(requestTo(ADD_ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withSuccess(kuboResponse, MediaType.APPLICATION_JSON));
 
         assertEquals(cid, client.pin(EPOCH_ID, JSON_BLOB));
@@ -71,7 +72,7 @@ class KuboIpfsPinClientTest {
         String ndjsonResponse = "{\"Name\":\"\",\"Hash\":\"\",\"Size\":\"0\"}\n"
                 + "{\"Name\":\"epoch-42.json\",\"Hash\":\"QmCorrectCid\",\"Size\":\"42\"}\n";
         server.expect(requestTo(ADD_ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withSuccess(ndjsonResponse, MediaType.APPLICATION_JSON));
 
         assertThrows(IpfsPinException.class, () -> client.pin(EPOCH_ID, JSON_BLOB));
@@ -85,7 +86,7 @@ class KuboIpfsPinClientTest {
     @Test
     void pinShouldThrowIpfsPinExceptionOnHttpServerError() {
         server.expect(requestTo(ADD_ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withServerError());
 
         assertThrows(IpfsPinException.class, () -> client.pin(EPOCH_ID, JSON_BLOB));
@@ -95,7 +96,7 @@ class KuboIpfsPinClientTest {
     @Test
     void pinShouldThrowIpfsPinExceptionOnHttp400() {
         server.expect(requestTo(ADD_ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST)
                         .body("{\"Message\":\"invalid body\"}"));
 
@@ -106,7 +107,7 @@ class KuboIpfsPinClientTest {
     @Test
     void pinShouldThrowWhenResponseBodyIsEmpty() {
         server.expect(requestTo(ADD_ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
 
         assertThrows(IpfsPinException.class, () -> client.pin(EPOCH_ID, JSON_BLOB));
@@ -117,7 +118,7 @@ class KuboIpfsPinClientTest {
     void pinShouldThrowWhenHashFieldIsMissingFromResponse() {
         String responseWithoutHash = "{\"Name\":\"epoch-42.json\",\"Size\":\"42\"}";
         server.expect(requestTo(ADD_ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withSuccess(responseWithoutHash, MediaType.APPLICATION_JSON));
 
         assertThrows(IpfsPinException.class, () -> client.pin(EPOCH_ID, JSON_BLOB));
@@ -127,7 +128,7 @@ class KuboIpfsPinClientTest {
     @Test
     void pinShouldThrowWhenResponseIsNotJson() {
         server.expect(requestTo(ADD_ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withSuccess("not json", MediaType.TEXT_PLAIN));
 
         assertThrows(IpfsPinException.class, () -> client.pin(EPOCH_ID, JSON_BLOB));

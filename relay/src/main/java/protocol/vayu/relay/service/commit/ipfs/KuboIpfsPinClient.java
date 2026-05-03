@@ -14,6 +14,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Pins epoch blobs to a local Kubo (go-ipfs) node via its HTTP RPC API.
@@ -40,7 +41,7 @@ public class KuboIpfsPinClient implements IpfsPinClient {
 
     @Override
     public String pin(long epochId, String jsonBlob) {
-        byte[] content = jsonBlob.getBytes(StandardCharsets.UTF_8);
+        byte[] content = Objects.requireNonNull(jsonBlob.getBytes(StandardCharsets.UTF_8));
         String filename = "epoch-" + epochId + ".json";
 
         // Kubo /api/v0/add expects multipart/form-data

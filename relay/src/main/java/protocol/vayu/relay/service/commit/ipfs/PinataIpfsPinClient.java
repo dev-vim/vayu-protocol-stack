@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Pins epoch blobs to IPFS via the Pinata managed pinning service.
@@ -50,7 +51,7 @@ public class PinataIpfsPinClient implements IpfsPinClient {
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(jwt);
+            headers.setBearerAuth(Objects.requireNonNull(jwt));
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 

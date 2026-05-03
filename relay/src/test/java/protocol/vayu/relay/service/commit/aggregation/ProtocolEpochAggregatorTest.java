@@ -6,6 +6,7 @@ import protocol.vayu.relay.config.RelayProperties;
 
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -460,7 +461,7 @@ class ProtocolEpochAggregatorTest {
             last = aggregator.aggregate(EPOCH_ID + i, readings);
         }
 
-        assertTrue(last.penaltyList().isEmpty(),
+        assertTrue(Objects.requireNonNull(last).penaltyList().isEmpty(),
                 "Reporters in inactive cells must not accumulate a zero-score streak");
     }
 

@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
+import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -43,7 +44,7 @@ class PinataIpfsPinClientTest {
     @Test
     void pinShouldReturnCidFromIpfsHashField() {
         server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withSuccess(PINATA_RESPONSE, MediaType.APPLICATION_JSON));
 
         String cid = client.pin(EPOCH_ID, JSON_BLOB);
@@ -55,7 +56,7 @@ class PinataIpfsPinClientTest {
     @Test
     void pinShouldSendBearerAuthorizationHeader() {
         server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andExpect(header("Authorization", "Bearer " + JWT))
                 .andRespond(withSuccess(PINATA_RESPONSE, MediaType.APPLICATION_JSON));
 
@@ -66,7 +67,7 @@ class PinataIpfsPinClientTest {
     @Test
     void pinShouldSendJsonContentTypeHeader() {
         server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
-                .andExpect(method(HttpMethod.POST))
+                .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andExpect(header("Content-Type", MediaType.APPLICATION_JSON_VALUE))
                 .andRespond(withSuccess(PINATA_RESPONSE, MediaType.APPLICATION_JSON));
 
