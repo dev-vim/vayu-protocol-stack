@@ -4,9 +4,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
-import protocol.vayu.relay.service.commit.IpfsPinClient;
-import protocol.vayu.relay.service.commit.KuboIpfsPinClient;
-import protocol.vayu.relay.service.commit.PinataIpfsPinClient;
+import protocol.vayu.relay.service.commit.ipfs.IpfsPinClient;
+import protocol.vayu.relay.service.commit.ipfs.KuboIpfsPinClient;
+import protocol.vayu.relay.service.commit.ipfs.PinataIpfsPinClient;
 
 /**
  * Selects the active {@link IpfsPinClient} implementation based on

@@ -1,4 +1,4 @@
-package protocol.vayu.relay.service.commit;
+package protocol.vayu.relay.service.commit.ipfs;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

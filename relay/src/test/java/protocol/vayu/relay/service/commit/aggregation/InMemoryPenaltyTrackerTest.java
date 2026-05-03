@@ -1,4 +1,4 @@
-package protocol.vayu.relay.service.commit;
+package protocol.vayu.relay.service.commit.aggregation;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

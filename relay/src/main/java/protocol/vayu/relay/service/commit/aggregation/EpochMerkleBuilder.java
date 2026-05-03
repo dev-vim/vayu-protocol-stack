@@ -1,4 +1,4 @@
-package protocol.vayu.relay.service.commit;
+package protocol.vayu.relay.service.commit.aggregation;
 
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import org.web3j.crypto.Hash;
@@ -224,7 +224,7 @@ public final class EpochMerkleBuilder {
     }
 
     /** Parses a 0x-prefixed 16-char H3 index string to a uint64 value. */
-    static long parseH3Index(String hex) {
+    public static long parseH3Index(String hex) {
         String clean = hex.startsWith("0x") || hex.startsWith("0X") ? hex.substring(2) : hex;
         return Long.parseUnsignedLong(clean, 16);
     }

@@ -3,6 +3,7 @@ package protocol.vayu.relay.service.commit;
 import org.junit.jupiter.api.Test;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.config.RelayProperties;
+import protocol.vayu.relay.service.commit.aggregation.DefaultEpochAggregator;
 
 import java.time.Instant;
 import java.util.ArrayList;

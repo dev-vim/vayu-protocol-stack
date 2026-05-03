@@ -1,4 +1,4 @@
-package protocol.vayu.relay.service.commit;
+package protocol.vayu.relay.service.commit.ipfs;
 
 /**
  * Pins an epoch blob to IPFS and returns its CID.

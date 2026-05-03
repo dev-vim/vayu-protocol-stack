@@ -1,4 +1,4 @@
-package protocol.vayu.relay.service.commit;
+package protocol.vayu.relay.service.commit.aggregation;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

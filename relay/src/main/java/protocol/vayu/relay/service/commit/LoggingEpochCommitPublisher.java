@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.web3j.crypto.Hash;
+import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
 
 import java.time.Instant;
 

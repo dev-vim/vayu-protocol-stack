@@ -1,4 +1,4 @@
-package protocol.vayu.relay.service.commit;
+package protocol.vayu.relay.service.commit.aggregation;
 
 /**
  * Score assigned to a reporter for a single epoch cell.

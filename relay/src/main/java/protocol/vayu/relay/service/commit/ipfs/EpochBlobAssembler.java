@@ -1,4 +1,9 @@
-package protocol.vayu.relay.service.commit;
+package protocol.vayu.relay.service.commit.ipfs;
+
+import protocol.vayu.relay.service.commit.aggregation.CellAggregate;
+import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
+import protocol.vayu.relay.service.commit.aggregation.ReporterReward;
+import protocol.vayu.relay.service.commit.aggregation.ReporterScore;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

@@ -1,4 +1,4 @@
-package protocol.vayu.relay.service.commit;
+package protocol.vayu.relay.service.commit.ipfs;
 
 /**
  * Thrown when an IPFS pin operation fails — HTTP error, unexpected response shape,

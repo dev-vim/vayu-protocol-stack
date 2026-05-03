@@ -2,6 +2,8 @@ package protocol.vayu.relay.service.commit;
 
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.config.RelayProperties;
+import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
+import protocol.vayu.relay.service.commit.aggregation.EpochAggregator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
