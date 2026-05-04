@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.web3j.crypto.Hash;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
+import protocol.vayu.relay.service.commit.ipfs.EpochBlobAssembler;
+import protocol.vayu.relay.service.commit.ipfs.IpfsPinClient;
 
 import java.time.Instant;
 
@@ -12,6 +14,14 @@ import java.time.Instant;
 public class LoggingEpochCommitPublisher implements EpochCommitPublisher {
 
     private static final Logger LOG = LoggerFactory.getLogger(LoggingEpochCommitPublisher.class);
+
+    private final EpochBlobAssembler blobAssembler;
+    private final IpfsPinClient ipfsPinClient;
+
+    public LoggingEpochCommitPublisher(EpochBlobAssembler blobAssembler, IpfsPinClient ipfsPinClient) {
+        this.blobAssembler = blobAssembler;
+        this.ipfsPinClient = ipfsPinClient;
+    }
 
     @Override
     public CommitPublication publish(EpochAggregate aggregate) {
@@ -22,6 +32,10 @@ public class LoggingEpochCommitPublisher implements EpochCommitPublisher {
         String rewardRootHex = aggregate.rewardRoot() != null
                 ? org.web3j.utils.Numeric.toHexString(aggregate.rewardRoot()) : "(none)";
 
+        String jsonBlob = blobAssembler.assemble(aggregate);
+        String ipfsCid = ipfsPinClient.pin(aggregate.epochId(), jsonBlob);
+        LOG.info("epoch {} blob pinned to IPFS: cid={}", aggregate.epochId(), ipfsCid);
+
         // Produce a deterministic stub tx-hash from the aggregate metadata.
         // Replace with a real web3j contract call in the production publisher.
         String payload = aggregate.epochId() + ":" + aggregate.totalReadings() + ":"
@@ -30,7 +44,7 @@ public class LoggingEpochCommitPublisher implements EpochCommitPublisher {
 
         LOG.info(
                 "epoch commit published: epochId={}, totalReadings={}, activeCells={}/{}, " +
-                "rewards={}, penalty={}, dataRoot={}, rewardRoot={}, txHash={}",
+                "rewards={}, penalty={}, dataRoot={}, rewardRoot={}, ipfsCid={}, txHash={}",
                 aggregate.epochId(),
                 aggregate.totalReadings(),
                 aggregate.activeCells(),
@@ -39,6 +53,7 @@ public class LoggingEpochCommitPublisher implements EpochCommitPublisher {
                 aggregate.penaltyList().size(),
                 dataRootHex,
                 rewardRootHex,
+                ipfsCid,
                 txHash
         );
 
