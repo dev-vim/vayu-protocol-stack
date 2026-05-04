@@ -263,6 +263,6 @@ class ReadingIngestionServiceTest {
             stakeCheckEnabled,
             eip712
         );
-        return new RelayProperties(epoch, validation, security, null);
+        return new RelayProperties(epoch, validation, security, null, null);
     }
 }

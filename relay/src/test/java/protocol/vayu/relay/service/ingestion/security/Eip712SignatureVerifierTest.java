@@ -183,6 +183,6 @@ class Eip712SignatureVerifierTest {
         );
         RelayProperties.Security security = new RelayProperties.Security(true, false, eip712);
 
-        return new RelayProperties(epoch, validation, security, null);
+        return new RelayProperties(epoch, validation, security, null, null);
     }
 }

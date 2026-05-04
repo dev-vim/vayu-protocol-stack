@@ -1,7 +1,5 @@
 package protocol.vayu.relay.service.commit.aggregation;
 
-import org.springframework.stereotype.Component;
-
 import java.math.BigInteger;
 
 /**
@@ -9,7 +7,6 @@ import java.math.BigInteger;
  * Replace with an on-chain querying implementation once the settlement contract
  * address is wired into the relay configuration.
  */
-@Component
 public class UniformStakeWeightProvider implements StakeWeightProvider {
 
     @Override

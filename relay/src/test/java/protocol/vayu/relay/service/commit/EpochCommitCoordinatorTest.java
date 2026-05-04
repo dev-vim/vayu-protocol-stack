@@ -258,6 +258,6 @@ class EpochCommitCoordinatorTest {
                 "0x0000000000000000000000000000000000000000"
         );
         RelayProperties.Security security = new RelayProperties.Security(true, false, eip712);
-        return new RelayProperties(epoch, validation, security, null);
+        return new RelayProperties(epoch, validation, security, null, null);
     }
 }

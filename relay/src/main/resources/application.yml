@@ -48,4 +48,8 @@ relay:
     provider: kubo
     kubo-api-url: "http://localhost:5001"
     # Set RELAY_IPFS_PINATA_JWT env var in production when provider=pinata
-    pinata-jwt: ""
+  chain:
+    # EVM JSON-RPC endpoint. Set RELAY_CHAIN_RPC_URL env var in production.
+    rpc-url: "http://localhost:8545"
+    # Deployed VayuEpochSettlement address. Set RELAY_CHAIN_SETTLEMENT_ADDRESS env var in production.
+    settlement-address: "0x0000000000000000000000000000000000000000"

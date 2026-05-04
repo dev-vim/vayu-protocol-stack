@@ -3,7 +3,7 @@ package protocol.vayu.relay.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "relay")
-public record RelayProperties(Epoch epoch, Validation validation, Security security, Ipfs ipfs) {
+public record RelayProperties(Epoch epoch, Validation validation, Security security, Ipfs ipfs, Chain chain) {
 
     public record Epoch(
             long durationSeconds,
@@ -61,6 +61,17 @@ public record RelayProperties(Epoch epoch, Validation validation, Security secur
             String kuboApiUrl,
             /** Pinata API JWT (Bearer token). Set via RELAY_IPFS_PINATA_JWT env var in prod. */
             String pinataJwt
+    ) {
+    }
+
+    /**
+     * EVM chain configuration for contract reads (stake checks) and writes (epoch commits).
+     */
+    public record Chain(
+            /** JSON-RPC endpoint, e.g. https://sepolia.base.org */
+            String rpcUrl,
+            /** Deployed VayuEpochSettlement contract address (0x-prefixed). */
+            String settlementAddress
     ) {
     }
 }

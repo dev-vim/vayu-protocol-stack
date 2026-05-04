@@ -19,6 +19,7 @@
 - Add integration tests for signature verification with golden vectors from an external signer toolchain.
 - Add dedicated test profile with signature verification enabled in Spring context tests.
 - Add observability: counters for accepted, invalid signature, no stake, rate-limited, and validation failures.
+- Grouping of reporter addresses and getting staking information in batch
 
 ## Repo-wide Documentation TODOs
 - Update root README with end-to-end architecture and service boundaries.

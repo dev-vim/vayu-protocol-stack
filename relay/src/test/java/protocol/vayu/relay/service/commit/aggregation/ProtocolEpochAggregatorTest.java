@@ -316,7 +316,7 @@ class ProtocolEpochAggregatorTest {
         RelayProperties.Eip712 eip712 = new RelayProperties.Eip712("VayuProtocol", "1", 84532,
                 "0x0000000000000000000000000000000000000000");
         RelayProperties.Security security = new RelayProperties.Security(false, false, eip712);
-        return new RelayProperties(epoch, validation, security, null);
+        return new RelayProperties(epoch, validation, security, null, null);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
