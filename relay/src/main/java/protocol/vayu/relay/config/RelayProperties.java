@@ -71,7 +71,11 @@ public record RelayProperties(Epoch epoch, Validation validation, Security secur
             /** JSON-RPC endpoint, e.g. https://sepolia.base.org */
             String rpcUrl,
             /** Deployed VayuEpochSettlement contract address (0x-prefixed). */
-            String settlementAddress
+            String settlementAddress,
+            /** When true, use Web3jEpochCommitPublisher to submit real on-chain transactions. */
+            boolean onChainCommitEnabled,
+            /** Relay wallet private key (hex, no 0x prefix). Set via RELAY_CHAIN_RELAY_PRIVATE_KEY env var. */
+            String relayPrivateKey
     ) {
     }
 }

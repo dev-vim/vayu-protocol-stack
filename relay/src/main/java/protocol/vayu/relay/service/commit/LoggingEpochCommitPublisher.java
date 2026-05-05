@@ -2,7 +2,6 @@ package protocol.vayu.relay.service.commit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 import org.web3j.crypto.Hash;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
 import protocol.vayu.relay.service.commit.ipfs.EpochBlobAssembler;
@@ -10,7 +9,6 @@ import protocol.vayu.relay.service.commit.ipfs.IpfsPinClient;
 
 import java.time.Instant;
 
-@Component
 public class LoggingEpochCommitPublisher implements EpochCommitPublisher {
 
     private static final Logger LOG = LoggerFactory.getLogger(LoggingEpochCommitPublisher.class);
