@@ -23,7 +23,7 @@ class CommitCycleStateTest {
     void recordCommittedShouldUpdateEpochTxHashAndClearFailure() {
         state.recordFailure("previous error");
 
-        state.recordCommitted(new CommitPublication(5L, "0xdeadbeef", 12, 1000L));
+        state.recordCommitted(new CommitPublication(5L, "0xdeadbeef", "(stub)", 12, 1000L));
 
         assertEquals(5L, state.lastCommittedEpoch());
         assertEquals("0xdeadbeef", state.lastCommitTxHash());
@@ -44,7 +44,7 @@ class CommitCycleStateTest {
 
     @Test
     void recordFailureShouldSetReasonWithoutChangingCommittedEpoch() {
-        state.recordCommitted(new CommitPublication(3L, "0xfoo", 1, 100L));
+        state.recordCommitted(new CommitPublication(3L, "0xfoo", "(stub)", 1, 100L));
 
         state.recordFailure("connection refused");
 

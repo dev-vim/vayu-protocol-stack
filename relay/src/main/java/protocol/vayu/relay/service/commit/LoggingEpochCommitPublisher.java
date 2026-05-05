@@ -57,6 +57,6 @@ public class LoggingEpochCommitPublisher implements EpochCommitPublisher {
                 txHash
         );
 
-        return new CommitPublication(aggregate.epochId(), txHash, aggregate.totalReadings(), submittedAt);
+        return new CommitPublication(aggregate.epochId(), txHash, ipfsCid, aggregate.totalReadings(), submittedAt);
     }
 }

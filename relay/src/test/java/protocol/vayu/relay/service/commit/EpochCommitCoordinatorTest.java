@@ -24,6 +24,7 @@ class EpochCommitCoordinatorTest {
         EpochCommitPublisher publisher = aggregate -> new CommitPublication(
                 aggregate.epochId(),
                 "0xabc123",
+                "(stub)",
                 aggregate.totalReadings(),
                 Instant.now().getEpochSecond()
         );
@@ -73,6 +74,7 @@ class EpochCommitCoordinatorTest {
         EpochCommitPublisher publisher = aggregate -> new CommitPublication(
                 aggregate.epochId(),
                 "0xunused",
+                "(stub)",
                 aggregate.totalReadings(),
                 Instant.now().getEpochSecond()
         );
@@ -100,7 +102,7 @@ class EpochCommitCoordinatorTest {
         List<Long> publishedEpochs = new ArrayList<>();
         EpochCommitPublisher publisher = aggregate -> {
             publishedEpochs.add(aggregate.epochId());
-            return new CommitPublication(aggregate.epochId(), "0xresume",
+            return new CommitPublication(aggregate.epochId(), "0xresume", "(stub)",
                     aggregate.totalReadings(), Instant.now().getEpochSecond());
         };
 
@@ -112,7 +114,7 @@ class EpochCommitCoordinatorTest {
         long latestSealableEpoch = (now / epochDuration) - 1;
 
         // pre-commit the epoch just before latest; coordinator should resume at latest
-        state.recordCommitted(new CommitPublication(latestSealableEpoch - 1, "0xprev", 1, now));
+        state.recordCommitted(new CommitPublication(latestSealableEpoch - 1, "0xprev", "(stub)", 1, now));
 
         // reading only in the latest sealable epoch
         store.enqueue(reading("0x1111111111111111111111111111111111111111",
@@ -136,7 +138,7 @@ class EpochCommitCoordinatorTest {
         List<Long> publishedEpochs = new ArrayList<>();
         EpochCommitPublisher publisher = aggregate -> {
             publishedEpochs.add(aggregate.epochId());
-            return new CommitPublication(aggregate.epochId(), "0xmulti",
+            return new CommitPublication(aggregate.epochId(), "0xmulti", "(stub)",
                     aggregate.totalReadings(), Instant.now().getEpochSecond());
         };
 
@@ -148,7 +150,7 @@ class EpochCommitCoordinatorTest {
         long latestSealableEpoch = (now / epochDuration) - 1;
 
         // 2 epochs behind so loop covers latestSealableEpoch-1 and latestSealableEpoch
-        state.recordCommitted(new CommitPublication(latestSealableEpoch - 2, "0xold", 1, now));
+        state.recordCommitted(new CommitPublication(latestSealableEpoch - 2, "0xold", "(stub)", 1, now));
 
         store.enqueue(reading("0x1111111111111111111111111111111111111111",
                 "0x0882830a1fffffff", latestSealableEpoch - 1, epochDuration));
@@ -180,7 +182,7 @@ class EpochCommitCoordinatorTest {
         long epochDuration = properties.epoch().durationSeconds();
         long latestSealableEpoch = (now / epochDuration) - 1;
 
-        state.recordCommitted(new CommitPublication(latestSealableEpoch - 2, "0xold", 1, now));
+        state.recordCommitted(new CommitPublication(latestSealableEpoch - 2, "0xold", "(stub)", 1, now));
 
         store.enqueue(reading("0x1111111111111111111111111111111111111111",
                 "0x0882830a1fffffff", latestSealableEpoch - 1, epochDuration));
@@ -204,7 +206,7 @@ class EpochCommitCoordinatorTest {
         CommitCycleState state = new CommitCycleState();
 
         EpochCommitPublisher publisher = aggregate -> new CommitPublication(
-                aggregate.epochId(), "0xhb", aggregate.totalReadings(),
+                aggregate.epochId(), "0xhb", "(stub)", aggregate.totalReadings(),
                 Instant.now().getEpochSecond());
 
         EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
