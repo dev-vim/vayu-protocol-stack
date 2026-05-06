@@ -78,7 +78,7 @@ public class ChainConfig {
     }
 
     /**
-     * Live stake provider: reads VayuEpochSettlement.reporterStake via eth_call.
+     * Live stake provider: reads {@code VayuEpochSettlement.reporterStake(address)} via eth_call.
      * Active when relay.security.stake-check-enabled=true.
      */
     @Bean

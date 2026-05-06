@@ -57,3 +57,5 @@ relay:
     on-chain-commit-enabled: false
     # Relay wallet private key (hex, no 0x prefix). Set RELAY_CHAIN_RELAY_PRIVATE_KEY env var in production.
     relay-private-key: ""
+    # EIP-155 chain ID for transaction signing. Set RELAY_CHAIN_CHAIN_ID env var in production.
+    chain-id: 84532

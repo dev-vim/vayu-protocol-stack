@@ -75,7 +75,9 @@ public record RelayProperties(Epoch epoch, Validation validation, Security secur
             /** When true, use Web3jEpochCommitPublisher to submit real on-chain transactions. */
             boolean onChainCommitEnabled,
             /** Relay wallet private key (hex, no 0x prefix). Set via RELAY_CHAIN_RELAY_PRIVATE_KEY env var. */
-            String relayPrivateKey
+            String relayPrivateKey,
+            /** EIP-155 chain ID used for transaction signing (e.g. 84532 for Base Sepolia). */
+            long chainId
     ) {
     }
 }
