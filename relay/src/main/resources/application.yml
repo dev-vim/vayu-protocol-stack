@@ -59,7 +59,7 @@ relay:
     # EVM JSON-RPC endpoint
     rpc-url: ${RELAY_CHAIN_RPC_URL:http://localhost:8545}
     # Deployed VayuEpochSettlement address
-    settlement-address: ${REAY_CHAIN_SETTLEMENT_ADDRESS:0x0000000000000000000000000000000000000000}
+    settlement-address: ${RELAY_CHAIN_SETTLEMENT_ADDRESS:0x0000000000000000000000000000000000000000}
     # Set to true and provide relay-private-key to submit real on-chain commitments
     on-chain-commit-enabled: ${RELAY_CHAIN_ON_CHAIN_COMMIT_ENABLED:false}
     # Relay wallet private key (hex, no 0x prefix)

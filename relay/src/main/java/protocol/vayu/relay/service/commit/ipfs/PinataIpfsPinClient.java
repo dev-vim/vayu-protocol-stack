@@ -56,7 +56,7 @@ public class PinataIpfsPinClient implements IpfsPinClient {
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
-            Map<?, ?> response = restTemplate.postForObject(endpoint, request, Map.class);
+            Map<?, ?> response = restTemplate.postForObject(Objects.requireNonNull(endpoint), request, Map.class);
             if (response == null) {
                 throw new IpfsPinException("Pinata returned empty response for epoch " + epochId);
             }
