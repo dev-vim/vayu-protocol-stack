@@ -236,14 +236,14 @@ reward using a Merkle proof.
 ```mermaid
 sequenceDiagram
     participant U as Reporter / Wallet
-    participant R as Relay Server
+    participant I as Indexer
     participant S as Settlement Contract
     participant T as VAYU Token
 
     Note over U: Challenge window closed<br/>(12h after epoch committed)
 
-    U->>R: GET /v1/epochs/{epochId}/proofs/{reporter}
-    R-->>U: {h3Index, amount, proof: [bytes32...]}
+    U->>I: GET /v1/epochs/{epochId}/proofs/{reporter}
+    I-->>U: {h3Index, amount, proof: [bytes32...]}
 
     U->>S: claimReward(epochId, h3Index, amount, proof)
 
@@ -349,6 +349,7 @@ sequenceDiagram
     participant D as Device
     participant R as Relay
     participant IPFS
+    participant I as Indexer
     participant S as Contract
     participant F as Fisherman
     participant U as Reporter
@@ -380,7 +381,7 @@ sequenceDiagram
 
     rect rgba(123, 104, 238, 0.05)
         Note right of U: CLAIM WINDOW (12h → 90 days)
-        U->>R: Get Merkle proof
+        U->>I: Get Merkle proof
         U->>S: claimReward(...)
         S->>U: Transfer VAYU tokens
     end

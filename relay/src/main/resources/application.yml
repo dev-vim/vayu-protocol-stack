@@ -1,0 +1,68 @@
+server:
+  port: ${RELAY_PORT:3000}
+
+spring:
+  application:
+    name: vayu-relay
+
+logging:
+  level:
+    protocol.vayu: ${RELAY_LOG_LEVEL:INFO}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+relay:
+  epoch:
+    duration-seconds: ${RELAY_EPOCH_DURATION_SECONDS:3600}
+    commit-check-interval-ms: ${RELAY_EPOCH_COMMIT_CHECK_INTERVAL_MS:60000}
+    timestamp-tolerance-seconds: ${RELAY_EPOCH_TIMESTAMP_TOLERANCE_SECONDS:300}
+    min-reporters-per-cell: ${RELAY_EPOCH_MIN_REPORTERS_PER_CELL:3}
+    scoring-tolerance-aqi: ${RELAY_EPOCH_SCORING_TOLERANCE_AQI:50}
+    epoch-budget-wei: ${RELAY_EPOCH_BUDGET_WEI:684931506849315068493}
+  validation:
+    required-h3-resolution: ${RELAY_VALIDATION_H3_RESOLUTION:8}
+    rate-limit-window-seconds: ${RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS:300}
+    min-aqi: ${RELAY_VALIDATION_MIN_AQI:1}
+    min-pm25: ${RELAY_VALIDATION_MIN_PM25:1}
+    messages:
+      aqi-min: "aqi must be greater than %d"
+      pm25-min: "pm25 must be greater than %d"
+      timestamp-required: "timestamp is required"
+      timestamp-tolerance: "timestamp is outside allowed tolerance window"
+      epoch-id-mismatch: "epochId does not match timestamp and epoch duration"
+      h3-format: "h3Index must be a 64-bit hex string"
+      h3-hex: "h3Index must be valid hex"
+      h3-resolution: "h3Index resolution must be %d"
+      rate-limit: "reporter can submit once every %d seconds"
+  security:
+    signature-verification-enabled: ${RELAY_SECURITY_SIGNATURE_VERIFICATION_ENABLED:false}
+    stake-check-enabled: ${RELAY_SECURITY_STAKE_CHECK_ENABLED:false}
+    eip712:
+      domain-name: ${RELAY_SECURITY_EIP712_DOMAIN_NAME:VayuProtocol}
+      domain-version: ${RELAY_SECURITY_EIP712_DOMAIN_VERSION:1}
+      chain-id: ${RELAY_SECURITY_EIP712_CHAIN_ID:84532}
+      verifying-contract: ${RELAY_SECURITY_EIP712_VERIFYING_CONTRACT:0x0000000000000000000000000000000000000000}
+  ipfs:
+    # "kubo" for local dev node (docker run -p 5001:5001 ipfs/kubo)
+    # "pinata" for production managed pinning
+    provider: ${RELAY_IPFS_PROVIDER:kubo}
+    kubo-api-url: ${RELAY_IPFS_KUBO_API_URL:http://localhost:5001}
+    # Set RELAY_IPFS_PINATA_JWT env var in production when provider=pinata
+    pinata-jwt: ${RELAY_IPFS_PINATA_JWT:}
+    # Pinata API endpoint (set RELAY_IPFS_PINATA_ENDPOINT env var in production)
+    pinata-endpoint: ${RELAY_IPFS_PINATA_ENDPOINT:https://api.pinata.cloud/pinning/pinJSONToIPFS}
+  chain:
+    # EVM JSON-RPC endpoint
+    rpc-url: ${RELAY_CHAIN_RPC_URL:http://localhost:8545}
+    # Deployed VayuEpochSettlement address
+    settlement-address: ${RELAY_CHAIN_SETTLEMENT_ADDRESS:0x0000000000000000000000000000000000000000}
+    # Set to true and provide relay-private-key to submit real on-chain commitments
+    on-chain-commit-enabled: ${RELAY_CHAIN_ON_CHAIN_COMMIT_ENABLED:false}
+    # Relay wallet private key (hex, no 0x prefix)
+    relay-private-key: ${RELAY_CHAIN_RELAY_PRIVATE_KEY:}
+    # EIP-155 chain ID for transaction signing
+    chain-id: ${RELAY_CHAIN_CHAIN_ID:84532}
