@@ -35,7 +35,8 @@ public class IpfsConfig {
     @Bean
     @ConditionalOnProperty(name = "relay.ipfs.provider", havingValue = "pinata")
     IpfsPinClient pinataIpfsPinClient(RelayProperties props) {
+        String endpoint = props.ipfs() != null ? props.ipfs().pinataEndpoint() : "https://api.pinata.cloud/pinning/pinJSONToIPFS";
         String jwt = props.ipfs() != null ? props.ipfs().pinataJwt() : "";
-        return new PinataIpfsPinClient(jwt, new RestTemplate());
+        return new PinataIpfsPinClient(endpoint, jwt, new RestTemplate());
     }
 }

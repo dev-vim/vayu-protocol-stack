@@ -60,7 +60,9 @@ public record RelayProperties(Epoch epoch, Validation validation, Security secur
             /** Base URL of the Kubo RPC API, e.g. http://localhost:5001 */
             String kuboApiUrl,
             /** Pinata API JWT (Bearer token). Set via RELAY_IPFS_PINATA_JWT env var in prod. */
-            String pinataJwt
+            String pinataJwt,
+            /** Pinata API endpoint. Set via RELAY_IPFS_PINATA_ENDPOINT env var in prod. */
+            String pinataEndpoint
     ) {
     }
 

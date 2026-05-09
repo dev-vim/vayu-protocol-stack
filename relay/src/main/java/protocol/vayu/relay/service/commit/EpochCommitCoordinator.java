@@ -52,6 +52,9 @@ public class EpochCommitCoordinator {
                 ? latestSealableEpoch
                 : commitCycleState.lastCommittedEpoch() + 1;
 
+        LOG.info("starting epoch commit cycle: now={}, latestSealableEpoch={}, startEpoch={}",
+                now, latestSealableEpoch, startEpoch);
+
         for (long epochId = startEpoch; epochId <= latestSealableEpoch; epochId++) {
             try {
                 List<ReadingSubmissionRequest> drained = epochReadingStore.drainEpoch(epochId);

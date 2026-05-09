@@ -20,6 +20,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class PinataIpfsPinClientTest {
 
+    private static final String ENDPOINT = "https://api.pinata.cloud/pinning/pinJSONToIPFS";
     private static final String JWT = "test.jwt.token";
     private static final long EPOCH_ID = 100L;
     private static final String JSON_BLOB = "{\"epochId\":100,\"totalReadings\":30}";
@@ -34,7 +35,7 @@ class PinataIpfsPinClientTest {
     void setUp() {
         restTemplate = new RestTemplate();
         server = MockRestServiceServer.createServer(restTemplate);
-        client = new PinataIpfsPinClient(JWT, restTemplate);
+        client = new PinataIpfsPinClient(ENDPOINT, JWT, restTemplate);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -43,7 +44,7 @@ class PinataIpfsPinClientTest {
 
     @Test
     void pinShouldReturnCidFromIpfsHashField() {
-        server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
+        server.expect(requestTo(ENDPOINT))
                 .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andRespond(withSuccess(PINATA_RESPONSE, MediaType.APPLICATION_JSON));
 
@@ -55,7 +56,7 @@ class PinataIpfsPinClientTest {
 
     @Test
     void pinShouldSendBearerAuthorizationHeader() {
-        server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
+        server.expect(requestTo(ENDPOINT))
                 .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andExpect(header("Authorization", "Bearer " + JWT))
                 .andRespond(withSuccess(PINATA_RESPONSE, MediaType.APPLICATION_JSON));
@@ -66,7 +67,7 @@ class PinataIpfsPinClientTest {
 
     @Test
     void pinShouldSendJsonContentTypeHeader() {
-        server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
+        server.expect(requestTo(ENDPOINT))
                 .andExpect(method(Objects.requireNonNull(HttpMethod.POST)))
                 .andExpect(header("Content-Type", MediaType.APPLICATION_JSON_VALUE))
                 .andRespond(withSuccess(PINATA_RESPONSE, MediaType.APPLICATION_JSON));
@@ -81,7 +82,7 @@ class PinataIpfsPinClientTest {
 
     @Test
     void pinShouldThrowIpfsPinExceptionOnHttp500() {
-        server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
+        server.expect(requestTo(ENDPOINT))
                 .andRespond(withServerError());
 
         assertThrows(IpfsPinException.class, () -> client.pin(EPOCH_ID, JSON_BLOB));
@@ -90,7 +91,7 @@ class PinataIpfsPinClientTest {
 
     @Test
     void pinShouldThrowIpfsPinExceptionOnHttp401() {
-        server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
+        server.expect(requestTo(ENDPOINT))
                 .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
                         .body("{\"error\":{\"reason\":\"INVALID_JWT\"}}"));
 
@@ -100,7 +101,7 @@ class PinataIpfsPinClientTest {
 
     @Test
     void pinShouldThrowIpfsPinExceptionOnHttp429RateLimit() {
-        server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
+        server.expect(requestTo(ENDPOINT))
                 .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
                         .body("{\"error\":{\"reason\":\"RATE_LIMIT_EXCEEDED\"}}"));
 
@@ -111,7 +112,7 @@ class PinataIpfsPinClientTest {
     @Test
     void pinShouldThrowWhenIpfsHashFieldIsMissing() {
         String responseWithoutHash = "{\"PinSize\":1234,\"Timestamp\":\"2026-05-03T00:00:00Z\"}";
-        server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
+        server.expect(requestTo(ENDPOINT))
                 .andRespond(withSuccess(responseWithoutHash, MediaType.APPLICATION_JSON));
 
         assertThrows(IpfsPinException.class, () -> client.pin(EPOCH_ID, JSON_BLOB));
@@ -121,7 +122,7 @@ class PinataIpfsPinClientTest {
     @Test
     void pinShouldThrowWhenIpfsHashIsBlank() {
         String responseWithBlankHash = "{\"IpfsHash\":\"\",\"PinSize\":0}";
-        server.expect(requestTo(PinataIpfsPinClient.ENDPOINT))
+        server.expect(requestTo(ENDPOINT))
                 .andRespond(withSuccess(responseWithBlankHash, MediaType.APPLICATION_JSON));
 
         assertThrows(IpfsPinException.class, () -> client.pin(EPOCH_ID, JSON_BLOB));

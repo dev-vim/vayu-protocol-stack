@@ -17,9 +17,10 @@ import java.util.Objects;
 /**
  * Pins epoch blobs to IPFS via the Pinata managed pinning service.
  *
- * API used: {@code POST https://api.pinata.cloud/pinning/pinJSONToIPFS}
  * Auth:     Bearer JWT supplied via {@code relay.ipfs.pinata-jwt}
  *           (set the {@code RELAY_IPFS_PINATA_JWT} environment variable in production).
+ * Endpoint: Configured via {@code relay.ipfs.pinata-endpoint}
+ *           (set the {@code RELAY_IPFS_PINATA_ENDPOINT} environment variable in production).
  *
  * Intended for production use. Set {@code relay.ipfs.provider=pinata} to activate.
  */
@@ -27,13 +28,13 @@ public class PinataIpfsPinClient implements IpfsPinClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(PinataIpfsPinClient.class);
 
-    static final String ENDPOINT = "https://api.pinata.cloud/pinning/pinJSONToIPFS";
-
+    private final String endpoint;
     private final String jwt;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
-    public PinataIpfsPinClient(String jwt, RestTemplate restTemplate) {
+    public PinataIpfsPinClient(String endpoint, String jwt, RestTemplate restTemplate) {
+        this.endpoint = endpoint;
         this.jwt = jwt;
         this.restTemplate = restTemplate;
         this.objectMapper = new ObjectMapper();
@@ -55,7 +56,7 @@ public class PinataIpfsPinClient implements IpfsPinClient {
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
-            Map<?, ?> response = restTemplate.postForObject(ENDPOINT, request, Map.class);
+            Map<?, ?> response = restTemplate.postForObject(endpoint, request, Map.class);
             if (response == null) {
                 throw new IpfsPinException("Pinata returned empty response for epoch " + epochId);
             }
