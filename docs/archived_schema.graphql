@@ -1,3 +1,8 @@
+# Note: The indexer implementation using Ponder generates its own GraphQL API directly
+# from its schema definition - the following would be redundant in that case.
+#
+# However, keeping this in the docs repo for documentation purposes
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Vayu Protocol — GraphQL Schema
 # ═══════════════════════════════════════════════════════════════════════════════
