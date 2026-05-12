@@ -14,6 +14,7 @@ import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
 import protocol.vayu.relay.service.commit.ipfs.EpochBlobAssembler;
 import protocol.vayu.relay.service.commit.ipfs.IpfsPinClient;
+import protocol.vayu.relay.service.commit.ipfs.IpfsPinException;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -52,7 +53,7 @@ class Web3jEpochCommitPublisherTest {
 
         byte[] dataRoot   = new byte[32]; Arrays.fill(dataRoot,   (byte) 1);
         byte[] rewardRoot = new byte[32]; Arrays.fill(rewardRoot, (byte) 2);
-        aggregate = new EpochAggregate(1L, 5, 3, List.of(), 2, List.of(), dataRoot, rewardRoot, List.of());
+        aggregate = new EpochAggregate(1L, 5, 3, List.of(), 2, List.of(), dataRoot, rewardRoot, List.of(), List.of());
 
         when(blobAssembler.assemble(any())).thenReturn("{\"epochId\":1}");
         when(ipfsPinClient.pin(any(Long.class), any())).thenReturn(IPFS_CID);
@@ -129,6 +130,49 @@ class Web3jEpochCommitPublisherTest {
         doReturn(req).when(web3j).ethSendRawTransaction(any());
     }
 
+    @SuppressWarnings("unchecked")
+    private void stubGasPriceError(String message) throws IOException {
+        EthGasPrice resp = new EthGasPrice();
+        EthGasPrice.Error error = new EthGasPrice.Error();
+        error.setCode(-32000);
+        error.setMessage(message);
+        resp.setError(error);
+        Request<?, EthGasPrice> req = mock(Request.class);
+        when(req.send()).thenReturn(resp);
+        doReturn(req).when(web3j).ethGasPrice();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubEstimateGasError(String message) throws IOException {
+        EthEstimateGas resp = new EthEstimateGas();
+        EthEstimateGas.Error error = new EthEstimateGas.Error();
+        error.setCode(-32000);
+        error.setMessage(message);
+        resp.setError(error);
+        Request<?, EthEstimateGas> req = mock(Request.class);
+        when(req.send()).thenReturn(resp);
+        doReturn(req).when(web3j).ethEstimateGas(any());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubNonceThrows(IOException ex) throws IOException {
+        Request<?, EthGetTransactionCount> req = mock(Request.class);
+        when(req.send()).thenThrow(ex);
+        doReturn(req).when(web3j).ethGetTransactionCount(any(), any());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubNonceError(String message) throws IOException {
+        EthGetTransactionCount resp = new EthGetTransactionCount();
+        EthGetTransactionCount.Error error = new EthGetTransactionCount.Error();
+        error.setCode(-32000);
+        error.setMessage(message);
+        resp.setError(error);
+        Request<?, EthGetTransactionCount> req = mock(Request.class);
+        when(req.send()).thenReturn(resp);
+        doReturn(req).when(web3j).ethGetTransactionCount(any(), any());
+    }
+
     // ---- tests ----------------------------------------------------------
 
     @Test
@@ -150,7 +194,7 @@ class Web3jEpochCommitPublisherTest {
     @Test
     void publishShouldThrowWhenDataRootIsNull() {
         EpochAggregate noRoot = new EpochAggregate(
-                2L, 3, 2, List.of(), 1, List.of(), null, new byte[32], List.of());
+                2L, 3, 2, List.of(), 1, List.of(), null, new byte[32], List.of(), List.of());
 
         assertThatThrownBy(() -> publisher.publish(noRoot))
                 .isInstanceOf(EpochCommitException.class)
@@ -161,7 +205,7 @@ class Web3jEpochCommitPublisherTest {
     @Test
     void publishShouldThrowWhenRewardRootIsNull() {
         EpochAggregate noRoot = new EpochAggregate(
-                3L, 3, 2, List.of(), 1, List.of(), new byte[32], null, List.of());
+                3L, 3, 2, List.of(), 1, List.of(), new byte[32], null, List.of(), List.of());
 
         assertThatThrownBy(() -> publisher.publish(noRoot))
                 .isInstanceOf(EpochCommitException.class)
@@ -216,5 +260,80 @@ class Web3jEpochCommitPublisherTest {
                 .hasMessageContaining("rejected")
                 .hasMessageContaining("1")
                 .hasMessageContaining("NotActiveRelay");
+    }
+
+    @Test
+    void publishShouldPropagateIpfsPinException() {
+        when(ipfsPinClient.pin(any(Long.class), any()))
+                .thenThrow(new IpfsPinException("kubo unavailable"));
+
+        assertThatThrownBy(() -> publisher.publish(aggregate))
+                .isInstanceOf(IpfsPinException.class)
+                .hasMessageContaining("kubo unavailable");
+    }
+
+    @Test
+    void publishShouldThrowOnGasPriceRpcError() throws IOException {
+        stubGasPriceError("method not found");
+
+        assertThatThrownBy(() -> publisher.publish(aggregate))
+                .isInstanceOf(EpochCommitException.class)
+                .hasMessageContaining("eth_gasPrice")
+                .hasMessageContaining("method not found");
+    }
+
+    @Test
+    void publishShouldThrowOnEstimateGasRpcError() throws IOException {
+        stubGasPrice("0x3B9ACA00");
+        stubEstimateGasError("execution reverted");
+
+        assertThatThrownBy(() -> publisher.publish(aggregate))
+                .isInstanceOf(EpochCommitException.class)
+                .hasMessageContaining("eth_estimateGas")
+                .hasMessageContaining("execution reverted");
+    }
+
+    @Test
+    void publishShouldThrowOnNonceIoFailure() throws IOException {
+        stubGasPrice("0x3B9ACA00");
+        stubEstimateGas("0x186A0");
+        stubNonceThrows(new IOException("connection reset"));
+
+        assertThatThrownBy(() -> publisher.publish(aggregate))
+                .isInstanceOf(EpochCommitException.class)
+                .hasMessageContaining("eth_getTransactionCount")
+                .hasCauseInstanceOf(IOException.class);
+    }
+
+    @Test
+    void publishShouldThrowOnNonceRpcError() throws IOException {
+        stubGasPrice("0x3B9ACA00");
+        stubEstimateGas("0x186A0");
+        stubNonceError("nonce too low");
+
+        assertThatThrownBy(() -> publisher.publish(aggregate))
+                .isInstanceOf(EpochCommitException.class)
+                .hasMessageContaining("eth_getTransactionCount")
+                .hasMessageContaining("nonce too low");
+    }
+
+    @Test
+    void publishShouldSucceedWithNonEmptyPenaltyList() throws IOException {
+        stubGasPrice("0x3B9ACA00");
+        stubEstimateGas("0x186A0");
+        stubNonce("0x1");
+        stubSendRawTx(TX_HASH);
+
+        byte[] dataRoot   = new byte[32]; Arrays.fill(dataRoot,   (byte) 1);
+        byte[] rewardRoot = new byte[32]; Arrays.fill(rewardRoot, (byte) 2);
+        EpochAggregate withPenalties = new EpochAggregate(
+                2L, 3, 2, List.of(), 1, List.of(), dataRoot, rewardRoot,
+                List.of(),
+                List.of("0xDeadBeefDeadBeefDeadBeefDeadBeefDeadBeef"));
+
+        CommitPublication result = publisher.publish(withPenalties);
+
+        assertThat(result.epochId()).isEqualTo(2L);
+        assertThat(result.txHash()).isEqualTo(TX_HASH);
     }
 }

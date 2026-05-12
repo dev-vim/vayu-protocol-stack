@@ -1,5 +1,7 @@
 package protocol.vayu.relay.service.commit.aggregation;
 
+import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
+
 import java.util.List;
 
 public record EpochAggregate(
@@ -21,6 +23,12 @@ public record EpochAggregate(
          * Null when produced by the basic DefaultEpochAggregator.
          */
         byte[] rewardRoot,
+        /**
+         * Individual readings that produced this aggregate.
+         * Included in the IPFS blob so fishermen can reconstruct Merkle proofs
+         * for on-chain challenges. Empty when produced by DefaultEpochAggregator.
+         */
+        List<ReadingSubmissionRequest> readings,
         /**
          * Reporter addresses eligible for auto-slash (>=10 consecutive zero-score epochs).
          * Empty when produced by the basic DefaultEpochAggregator.
