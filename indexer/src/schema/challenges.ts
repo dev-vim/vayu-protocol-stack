@@ -10,8 +10,6 @@ export const challenges = onchainTable(
     challenger:    t.hex().notNull(),
     challengeType: challengeType("challenge_type").notNull(),
     succeeded:     t.boolean(),           // null until ChallengeResolved
-    target:        t.hex(),               // slashed address; null if challenge failed
-    slashAmount:   t.bigint().default(0n),
     blockNumber:   t.bigint().notNull(),
     txHash:        t.hex().notNull(),
   }),

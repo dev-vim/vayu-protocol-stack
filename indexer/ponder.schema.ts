@@ -6,3 +6,4 @@ export * from "./src/schema/reporters";
 export * from "./src/schema/relays";
 export * from "./src/schema/claims";
 export * from "./src/schema/challenges";
+export * from "./src/schema/slashes";

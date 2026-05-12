@@ -5,6 +5,7 @@ import {
   epochs,
   relays,
   reporters,
+  slashes,
 } from "ponder:schema";
 
 // ── Epoch lifecycle ─────────────────────────────────────────────────────────
@@ -107,24 +108,30 @@ ponder.on("VayuEpochSettlement:ChallengeResolved", async ({ event, context }) =>
 });
 
 ponder.on("VayuEpochSettlement:Slashed", async ({ event, context }) => {
-  const { offender, slashAmount, challengeType, epochId } = event.args;
+  const { offender, slashAmount, fishermanReward, challengeType, epochId } = event.args;
 
-  // Update the resolved challenge row with slash details
+  // One row per Slashed event. SpatialAnomaly emits one per reporter in the
+  // disputed cell, so this naturally captures all of them independently.
   await context.db
-    .update(challenges, {
-      epochId:       Number(epochId),
-      // The slashed party may differ from the challenger — store on the challenge row
-      // as a best-effort association (challengeType links them).
-      challengeType: CHALLENGE_TYPE_MAP[challengeType],
-    } as never) // TODO: refine once multi-challenge-type slashing is clearer
-    .set({ target: offender, slashAmount });
+    .insert(slashes)
+    .values({
+      epochId:         Number(epochId),
+      challengeType:   CHALLENGE_TYPE_MAP[challengeType],
+      offender,
+      slashAmount,
+      fishermanReward,
+      blockNumber:     event.block.number,
+      txHash:          event.transaction.hash,
+    })
+    .onConflictDoNothing();
 
-  // Update offender totals (reporter or relay)
+  // Update offender totals. Only one of these will find a matching row
+  // (reporters and relays are disjoint sets), so both updates are safe to run.
   await context.db
     .update(reporters, { address: offender })
     .set((row) => ({
       totalSlashed: row.totalSlashed + slashAmount,
-      isSlashed: true,
+      isSlashed:    true,
     }));
 
   await context.db
