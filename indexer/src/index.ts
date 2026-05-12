@@ -7,6 +7,7 @@ import {
   reporters,
   slashes,
 } from "ponder:schema";
+import { computeChallengeWindowEnd, toChallengeType } from "./lib/epochs";
 
 // ── Epoch lifecycle ─────────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ ponder.on("VayuEpochSettlement:EpochCommitted", async ({ event, context }) => {
       committedAt:        Number(event.block.timestamp),
       blockNumber:        event.block.number,
       txHash:             event.transaction.hash,
-      challengeWindowEnd: Number(event.block.timestamp) + 43200, // +12h
+      challengeWindowEnd: computeChallengeWindowEnd(Number(event.block.timestamp)),
       ipfsStatus:         "PENDING",
     })
     .onConflictDoNothing();
@@ -72,14 +73,6 @@ ponder.on("VayuEpochSettlement:RewardClaimed", async ({ event, context }) => {
 
 // ── Challenges & slashing ────────────────────────────────────────────────────
 
-const CHALLENGE_TYPE_MAP: Record<number, "SPATIAL_ANOMALY" | "REWARD_COMPUTATION" | "DATA_INTEGRITY" | "DUPLICATE_LOCATION" | "PENALTY_LIST_FRAUD"> = {
-  0: "SPATIAL_ANOMALY",
-  1: "REWARD_COMPUTATION",
-  2: "DATA_INTEGRITY",
-  3: "DUPLICATE_LOCATION",
-  4: "PENALTY_LIST_FRAUD",
-};
-
 ponder.on("VayuEpochSettlement:ChallengeSubmitted", async ({ event, context }) => {
   const { epochId, challenger, challengeType } = event.args;
 
@@ -88,7 +81,7 @@ ponder.on("VayuEpochSettlement:ChallengeSubmitted", async ({ event, context }) =
     .values({
       epochId:       Number(epochId),
       challenger,
-      challengeType: CHALLENGE_TYPE_MAP[challengeType],
+      challengeType: toChallengeType(challengeType),
       blockNumber:   event.block.number,
       txHash:        event.transaction.hash,
     })
@@ -102,7 +95,7 @@ ponder.on("VayuEpochSettlement:ChallengeResolved", async ({ event, context }) =>
     .update(challenges, {
       epochId:       Number(epochId),
       challenger,
-      challengeType: CHALLENGE_TYPE_MAP[challengeType],
+      challengeType: toChallengeType(challengeType),
     })
     .set({ succeeded });
 });
@@ -116,7 +109,7 @@ ponder.on("VayuEpochSettlement:Slashed", async ({ event, context }) => {
     .insert(slashes)
     .values({
       epochId:         Number(epochId),
-      challengeType:   CHALLENGE_TYPE_MAP[challengeType],
+      challengeType:   toChallengeType(challengeType),
       offender,
       slashAmount,
       fishermanReward,

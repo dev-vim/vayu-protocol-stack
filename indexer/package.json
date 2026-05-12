@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "ponder dev",
     "start": "ponder start",
-    "codegen": "ponder codegen"
+    "codegen": "ponder codegen",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "ponder": "latest",
     "viem": "^2"
   },
   "devDependencies": {
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.6"
   }
 }
