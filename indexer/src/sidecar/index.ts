@@ -2,8 +2,13 @@ import { fileURLToPath } from "url";
 import { sql, runMigrations } from "./db.js";
 import { processEpoch } from "./processor.js";
 
-const POLL_INTERVAL_MS = parseInt(process.env.SIDECAR_POLL_INTERVAL_MS ?? "30000", 10);
-const BATCH_SIZE       = parseInt(process.env.SIDECAR_BATCH_SIZE       ?? "10",    10);
+function parsePositiveIntEnv(value: string | undefined, defaultValue: number): number {
+   const parsed = parseInt(value ?? "", 10);
+   return Number.isNaN(parsed) || parsed <= 0 ? defaultValue : parsed;
+ }
+
+ const POLL_INTERVAL_MS = parsePositiveIntEnv(process.env.SIDECAR_POLL_INTERVAL_MS, 30000);
+ const BATCH_SIZE       = parsePositiveIntEnv(process.env.SIDECAR_BATCH_SIZE, 10);
 
 export async function poll(): Promise<void> {
   let pending: { epoch_id: number; ipfs_cid: string }[];

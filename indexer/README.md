@@ -144,8 +144,8 @@ Connect to the database:
 
 ```bash
 psql postgresql://postgres:postgres@localhost:5432/vayu_indexer
-# or, if .env.local is sourced:
-. ./.env.local && psql "$DATABASE_URL"
+# or, using the shared .env:
+. ./.env && psql "$DATABASE_URL"
 ```
 
 Useful queries:

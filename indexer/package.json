@@ -4,16 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": ". ./.env && until pg_isready -d \"$DATABASE_URL\" -q; do echo 'waiting for postgres...'; sleep 2; done",
     "dev": "ponder dev",
+    "prestart": ". ./.env && until pg_isready -d \"$DATABASE_URL\" -q; do echo 'waiting for postgres...'; sleep 2; done",
     "start": "ponder start",
     "codegen": "ponder codegen",
     "test": "vitest run",
     "test:watch": "vitest",
-    "sidecar": ". ./.env.local && tsx src/sidecar/index.ts",
+    "presidecar": ". ./.env && until pg_isready -d \"$DATABASE_URL\" -q; do echo 'waiting for postgres...'; sleep 2; done",
+    "sidecar": "set -a && . ./.env && set +a && tsx src/sidecar/index.ts",
     "lint": "eslint src"
   },
   "dependencies": {
-    "ponder": "latest",
+    "ponder": "0.16.6",
     "postgres": "^3.4.9",
     "viem": "^2",
     "zod": "^3.25.76"

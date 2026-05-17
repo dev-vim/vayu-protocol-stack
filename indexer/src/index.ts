@@ -33,10 +33,11 @@ ponder.on("VayuEpochSettlement:EpochCommitted", async ({ event, context }) => {
     })
     .onConflictDoNothing();
 
-  // Increment relay epoch counter
+  // Increment relay epoch counter, creating the relay row if it was not indexed
   await context.db
-    .update(relays, { address: relay })
-    .set((row) => ({ epochsCommitted: row.epochsCommitted + 1 }));
+    .insert(relays)
+    .values({ address: relay, epochsCommitted: 1 })
+    .onConflictDoUpdate((row) => ({ epochsCommitted: row.epochsCommitted + 1 }));
 });
 
 ponder.on("VayuEpochSettlement:EpochSwept", async ({ event, context }) => {
@@ -116,7 +117,7 @@ ponder.on("VayuEpochSettlement:Slashed", async ({ event, context }) => {
       blockNumber:     event.block.number,
       txHash:          event.transaction.hash,
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing(); // reorg-safety only (not guarding against a real contract-level invariant violation).
 
   // Update offender totals. Only one of these will find a matching row
   // (reporters and relays are disjoint sets), so both updates are safe to run.

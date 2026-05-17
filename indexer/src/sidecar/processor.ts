@@ -72,12 +72,10 @@ async function insertCellEpochs(epochId: number, blob: EpochBlob): Promise<void>
     reporter_scores: JSON.stringify(c.reporterScores),
   }));
 
-  for (const row of rows) {
-    await sql`
-      INSERT INTO cell_epochs ${sql(row)}
-      ON CONFLICT (epoch_id, h3_index) DO NOTHING
-    `;
-  }
+  await sql`
+    INSERT INTO cell_epochs ${sql(rows)}
+    ON CONFLICT (epoch_id, h3_index) DO NOTHING
+  `;
 }
 
 async function insertReadings(epochId: number, blob: EpochBlob): Promise<void> {
@@ -97,12 +95,10 @@ async function insertReadings(epochId: number, blob: EpochBlob): Promise<void> {
     co:        r.co,
   }));
 
-  for (const row of rows) {
-    await sql`
-      INSERT INTO readings ${sql(row)}
-      ON CONFLICT (epoch_id, reporter, h3_index) DO NOTHING
-    `;
-  }
+  await sql`
+    INSERT INTO readings ${sql(rows)}
+    ON CONFLICT (epoch_id, reporter, h3_index) DO NOTHING
+  `;
 }
 
 async function markIngested(epochId: number, blob: EpochBlob): Promise<void> {
