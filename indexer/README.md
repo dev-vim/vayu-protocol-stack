@@ -137,6 +137,52 @@ for epochs with `ipfs_status = 'PENDING'`.
 
 ---
 
+## Verifying Data with psql
+
+Connect to the database:
+
+```bash
+psql postgresql://postgres:postgres@localhost:5432/vayu_indexer
+# or, if .env.local is sourced:
+. ./.env.local && psql "$DATABASE_URL"
+```
+
+Useful queries:
+
+```sql
+-- Check epoch ingestion status
+SELECT epoch_id, ipfs_status, ipfs_cid FROM epochs ORDER BY epoch_id DESC LIMIT 20;
+
+-- List all tables (confirm sidecar tables exist)
+\dt
+
+-- Inspect per-cell aggregates for a specific epoch
+SELECT * FROM cell_epochs WHERE epoch_id = <epoch_id>;
+
+-- Inspect individual readings for a specific epoch
+SELECT * FROM readings WHERE epoch_id = <epoch_id> LIMIT 20;
+
+-- Count readings per reporter
+SELECT reporter, COUNT(*) AS reading_count FROM readings GROUP BY reporter ORDER BY reading_count DESC;
+
+-- Check live_query_tables (created by Ponder's trigger infrastructure)
+SELECT * FROM live_query_tables;
+
+-- Check the trigger Ponder installs on the epochs table
+SELECT trigger_name, event_object_schema, action_statement
+FROM information_schema.triggers
+WHERE event_object_table = 'epochs';
+```
+
+One-liner (no REPL):
+
+```bash
+. ./.env.local && psql "$DATABASE_URL" -c \
+  "SELECT epoch_id, ipfs_status FROM epochs ORDER BY epoch_id DESC LIMIT 10;"
+```
+
+---
+
 ## IPFS Blob Format
 
 The sidecar validates every blob against `src/sidecar/blob.schema.ts` before writing to the database.
