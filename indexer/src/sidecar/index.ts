@@ -16,10 +16,10 @@ export async function poll(): Promise<void> {
       ORDER  BY epoch_id ASC
       LIMIT  ${BATCH_SIZE}
     `;
-  } catch (err: any) {
+  } catch (err: unknown) {
     // PostgreSQL error 42P01: the epochs table hasn't been created by the
     // indexer yet — skip this cycle and wait for the next interval.
-    if (err?.code === "42P01") {
+    if (typeof err === "object" && err !== null && "code" in err && err.code === "42P01") {
       console.warn("[sidecar] epochs table not yet available, skipping poll");
       return;
     }

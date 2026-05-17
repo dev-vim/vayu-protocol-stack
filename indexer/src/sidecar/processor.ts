@@ -1,5 +1,5 @@
 import { sql } from "./db.js";
-import { fetchBlob, IpfsFetchError } from "./ipfs.js";
+import { fetchBlob } from "./ipfs.js";
 import { EpochBlobSchema, type EpochBlob } from "./blob.schema.js";
 
 /**

@@ -9,7 +9,8 @@
     "codegen": "ponder codegen",
     "test": "vitest run",
     "test:watch": "vitest",
-    "sidecar": ". ./.env.local && tsx src/sidecar/index.ts"
+    "sidecar": ". ./.env.local && tsx src/sidecar/index.ts",
+    "lint": "eslint src"
   },
   "dependencies": {
     "ponder": "latest",
@@ -18,6 +19,10 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/node": "^25.8.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.3",
+    "@typescript-eslint/parser": "^8.59.3",
+    "eslint": "^10.4.0",
     "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^4.1.6"
