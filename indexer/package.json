@@ -1,0 +1,25 @@
+{
+  "name": "@vayu-protocol/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ponder dev",
+    "start": "ponder start",
+    "codegen": "ponder codegen",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sidecar": ". ./.env.local && tsx src/sidecar/index.ts"
+  },
+  "dependencies": {
+    "ponder": "latest",
+    "postgres": "^3.4.9",
+    "viem": "^2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "vitest": "^4.1.6"
+  }
+}

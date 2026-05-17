@@ -6,6 +6,7 @@ import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DefaultEpochAggregatorTest {
 
@@ -36,6 +37,16 @@ class DefaultEpochAggregatorTest {
         assertEquals(150, firstCell.medianAqi());
         assertEquals(250, firstCell.avgPm25());
         assertEquals(5, firstCell.avgPm10());
+
+        assertEquals(3, aggregate.readings().size());
+        assertTrue(aggregate.readings().containsAll(readings));
+    }
+
+    @Test
+    void aggregateShouldReturnEmptyReadingsForEmptyInput() {
+        EpochAggregate aggregate = aggregator.aggregate(100L, List.of());
+
+        assertTrue(aggregate.readings().isEmpty());
     }
 
     private static ReadingSubmissionRequest reading(

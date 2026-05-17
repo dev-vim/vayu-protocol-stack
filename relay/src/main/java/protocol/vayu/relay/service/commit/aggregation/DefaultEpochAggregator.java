@@ -23,7 +23,7 @@ public class DefaultEpochAggregator implements EpochAggregator {
     @Override
     public EpochAggregate aggregate(long epochId, List<ReadingSubmissionRequest> readings) {
         if (readings == null || readings.isEmpty()) {
-            return new EpochAggregate(epochId, 0, 0, List.of(), 0, List.of(), null, null, List.of());
+            return new EpochAggregate(epochId, 0, 0, List.of(), 0, List.of(), null, null, List.of(), List.of());
         }
 
         Map<String, Stats> perCell = new LinkedHashMap<>();
@@ -41,7 +41,7 @@ public class DefaultEpochAggregator implements EpochAggregator {
         }
 
         return new EpochAggregate(epochId, readings.size(), uniqueReporters.size(), cells,
-                0, List.of(), null, null, List.of());
+                0, List.of(), null, null, List.copyOf(readings), List.of());
     }
 
     private static final class Stats {

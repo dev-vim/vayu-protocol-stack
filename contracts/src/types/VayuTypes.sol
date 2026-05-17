@@ -206,7 +206,6 @@ library VayuTypes {
         uint64  committedAt;    // block.timestamp of commitEpoch() call
         uint32  totalReadings;  // informational — sum across all cells
         uint32  activeCells;    // cells with >= MIN_REPORTERS_PER_CELL
-        bool    finalized;      // true once challenge window has closed
         bool    swept;          // true once expired unclaimed rewards swept
     }
 
