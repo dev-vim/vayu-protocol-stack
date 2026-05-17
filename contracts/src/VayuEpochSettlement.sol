@@ -204,7 +204,6 @@ contract VayuEpochSettlement is Ownable, Pausable {
             committedAt: uint64(block.timestamp),
             totalReadings: totalReadings,
             activeCells: activeCells,
-            finalized: false,
             swept: false
         });
 

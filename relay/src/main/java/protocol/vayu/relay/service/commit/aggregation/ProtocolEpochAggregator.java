@@ -140,6 +140,7 @@ public class ProtocolEpochAggregator implements EpochAggregator {
                 rewards,
                 dataRoot,
                 rewardRoot,
+                List.copyOf(readings),
                 penaltyList
         );
     }
@@ -223,7 +224,7 @@ public class ProtocolEpochAggregator implements EpochAggregator {
     // ─────────────────────────────────────────────────────────────────────────
 
     private static EpochAggregate empty(long epochId) {
-        return new EpochAggregate(epochId, 0, 0, List.of(), 0, List.of(), null, null, List.of());
+        return new EpochAggregate(epochId, 0, 0, List.of(), 0, List.of(), null, null, List.of(), List.of());
     }
 
     /** Median of a non-empty integer array. Uses lower-middle for even-count sets. */

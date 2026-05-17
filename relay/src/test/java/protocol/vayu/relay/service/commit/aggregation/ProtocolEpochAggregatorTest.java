@@ -279,6 +279,21 @@ class ProtocolEpochAggregatorTest {
         assertEquals(0, result.activeCells());
         assertTrue(result.rewards().isEmpty());
         assertTrue(result.penaltyList().isEmpty());
+        assertTrue(result.readings().isEmpty());
+    }
+
+    @Test
+    void aggregateShouldPreserveAllReadingsInAggregate() {
+        List<ReadingSubmissionRequest> inputs = List.of(
+                reading("0x1111111111111111111111111111111111111111", "0x0882830a1fffffff", 100),
+                reading("0x2222222222222222222222222222222222222222", "0x0882830a1fffffff", 120),
+                reading("0x3333333333333333333333333333333333333333", "0x0882830b1fffffff", 90)
+        );
+
+        EpochAggregate result = aggregator.aggregate(EPOCH_ID, inputs);
+
+        assertEquals(3, result.readings().size());
+        assertTrue(result.readings().containsAll(inputs));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 package protocol.vayu.relay.service.commit.ipfs;
 
+import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.service.commit.aggregation.CellAggregate;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
 import protocol.vayu.relay.service.commit.aggregation.EpochMerkleBuilder;
@@ -12,10 +13,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -113,6 +116,23 @@ class EpochBlobAssemblerTest {
         assertEquals(0.8, (Double) score.get("score"), 1e-9);
     }
 
+    @Test
+    void assembleShouldSerialiseCellPollutantAverages() throws Exception {
+        CellAggregate cell = new CellAggregate("0x0882830a1fffffff", 4, true, 100,
+                25, 15, 8, 4, 2, 1, List.of());
+        EpochAggregate agg = aggregate(1L, 4, 1, 1, new byte[32], new byte[32],
+                List.of(cell), List.of(), List.of());
+
+        Map<String, Object> blob = parse(assembler.assemble(agg));
+        Map<?, ?> c = (Map<?, ?>) ((List<?>) blob.get("cells")).get(0);
+
+        assertEquals(15, c.get("avgPm10"));
+        assertEquals(8,  c.get("avgO3"));
+        assertEquals(4,  c.get("avgNo2"));
+        assertEquals(2,  c.get("avgSo2"));
+        assertEquals(1,  c.get("avgCo"));
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Rewards
     // ─────────────────────────────────────────────────────────────────────────
@@ -155,6 +175,89 @@ class EpochBlobAssemblerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Readings
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void assembleShouldIncludeEmptyReadingsArrayWhenNone() throws Exception {
+        EpochAggregate agg = aggregate(1L, 0, 0, 0, new byte[32], new byte[32],
+                List.of(), List.of(), List.of());
+
+        Map<String, Object> blob = parse(assembler.assemble(agg));
+
+        List<?> readings = (List<?>) blob.get("readings");
+        assertNotNull(readings, "readings key must be present");
+        assertTrue(readings.isEmpty());
+    }
+
+    @Test
+    void assembleShouldSerialiseReadingMandatoryFields() throws Exception {
+        ReadingSubmissionRequest reading = new ReadingSubmissionRequest(
+                "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa",
+                "0x0882830a1fffffff",
+                42L, 1_700_000_000L, 85, 30,
+                null, null, null, null, null,
+                "0x" + "ab".repeat(65));
+        EpochAggregate agg = new EpochAggregate(
+                1L, 1, 1, List.of(), 0, List.of(), new byte[32], new byte[32],
+                List.of(reading), List.of());
+
+        Map<String, Object> blob = parse(assembler.assemble(agg));
+        Map<?, ?> r = (Map<?, ?>) ((List<?>) blob.get("readings")).get(0);
+
+        assertEquals("0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa", r.get("reporter"));
+        assertEquals("0x0882830a1fffffff", r.get("h3Index"));
+        assertEquals(42L, ((Number) r.get("epochId")).longValue());
+        assertEquals(1_700_000_000L, ((Number) r.get("timestamp")).longValue());
+        assertEquals(85, r.get("aqi"));
+        assertEquals(30, r.get("pm25"));
+    }
+
+    @Test
+    void assembleShouldSerialiseReadingOptionalPollutantsWhenProvided() throws Exception {
+        ReadingSubmissionRequest reading = new ReadingSubmissionRequest(
+                "0xBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBb",
+                "0x0882830a1fffffff",
+                1L, 1_700_000_000L, 50, 20,
+                10, 20, 30, 40, 50,
+                "0x" + "ab".repeat(65));
+        EpochAggregate agg = new EpochAggregate(
+                1L, 1, 1, List.of(), 0, List.of(), new byte[32], new byte[32],
+                List.of(reading), List.of());
+
+        Map<String, Object> blob = parse(assembler.assemble(agg));
+        Map<?, ?> r = (Map<?, ?>) ((List<?>) blob.get("readings")).get(0);
+
+        assertEquals(10, r.get("pm10"));
+        assertEquals(20, r.get("o3"));
+        assertEquals(30, r.get("no2"));
+        assertEquals(40, r.get("so2"));
+        assertEquals(50, r.get("co"));
+    }
+
+    @Test
+    void assembleShouldDefaultNullOptionalReadingFieldsToZero() throws Exception {
+        ReadingSubmissionRequest reading = new ReadingSubmissionRequest(
+                "0xCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCc",
+                "0x0882830a1fffffff",
+                1L, 1_700_000_000L, 50, 20,
+                null, null, null, null, null,
+                "0x" + "ab".repeat(65));
+        EpochAggregate agg = new EpochAggregate(
+                1L, 1, 1, List.of(), 0, List.of(), new byte[32], new byte[32],
+                List.of(reading), List.of());
+
+        Map<String, Object> blob = parse(assembler.assemble(agg));
+        Map<?, ?> r = (Map<?, ?>) ((List<?>) blob.get("readings")).get(0);
+
+        assertEquals(0, r.get("pm10"));
+        assertEquals(0, r.get("o3"));
+        assertEquals(0, r.get("no2"));
+        assertEquals(0, r.get("so2"));
+        assertEquals(0, r.get("co"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Penalty list
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -180,6 +283,23 @@ class EpochBlobAssemblerTest {
 
         List<?> penaltyList = (List<?>) blob.get("penaltyList");
         assertTrue(penaltyList.isEmpty());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Field ordering
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void assembleShouldSerialiseFieldsInSpecOrder() throws Exception {
+        EpochAggregate agg = aggregate(1L, 0, 0, 0, new byte[32], new byte[32],
+                List.of(), List.of(), List.of());
+
+        Map<String, Object> blob = parse(assembler.assemble(agg));
+
+        assertEquals(
+                List.of("epochId", "totalReadings", "uniqueReporters", "activeCells",
+                        "dataRoot", "rewardRoot", "cells", "readings", "rewards", "penaltyList"),
+                new ArrayList<>(blob.keySet()));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -216,7 +336,7 @@ class EpochBlobAssemblerTest {
             int activeCells, byte[] dataRoot, byte[] rewardRoot,
             List<CellAggregate> cells, List<ReporterReward> rewards, List<String> penaltyList) {
         return new EpochAggregate(epochId, totalReadings, uniqueReporters,
-                cells, activeCells, rewards, dataRoot, rewardRoot, penaltyList);
+                cells, activeCells, rewards, dataRoot, rewardRoot, List.of(), penaltyList);
     }
 
     private Map<String, Object> parse(String json) throws Exception {

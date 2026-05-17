@@ -1,5 +1,6 @@
 package protocol.vayu.relay.service.commit.ipfs;
 
+import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.service.commit.aggregation.CellAggregate;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
 import protocol.vayu.relay.service.commit.aggregation.ReporterReward;
@@ -48,6 +49,7 @@ public class EpochBlobAssembler {
         blob.put("dataRoot", hexOrNull(aggregate.dataRoot()));
         blob.put("rewardRoot", hexOrNull(aggregate.rewardRoot()));
         blob.put("cells", aggregate.cells().stream().map(this::cellToMap).toList());
+        blob.put("readings", aggregate.readings().stream().map(this::readingToMap).toList());
         blob.put("rewards", aggregate.rewards().stream().map(this::rewardToMap).toList());
         blob.put("penaltyList", aggregate.penaltyList());
 
@@ -78,6 +80,22 @@ public class EpochBlobAssembler {
         map.put("reporterScores", cell.reporterScores().stream()
                 .map(rs -> Map.of("reporter", rs.reporter(), "score", rs.score()))
                 .toList());
+        return map;
+    }
+
+    private Map<String, Object> readingToMap(ReadingSubmissionRequest reading) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("reporter", reading.reporter());
+        map.put("h3Index", reading.h3Index());
+        map.put("epochId", reading.epochId());
+        map.put("timestamp", reading.timestamp());
+        map.put("aqi", reading.aqi());
+        map.put("pm25", reading.pm25());
+        map.put("pm10", reading.pm10()  != null ? reading.pm10()  : 0);
+        map.put("o3",   reading.o3()    != null ? reading.o3()    : 0);
+        map.put("no2",  reading.no2()   != null ? reading.no2()   : 0);
+        map.put("so2",  reading.so2()   != null ? reading.so2()   : 0);
+        map.put("co",   reading.co()    != null ? reading.co()    : 0);
         return map;
     }
 
