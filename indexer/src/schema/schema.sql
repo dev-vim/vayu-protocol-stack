@@ -42,7 +42,6 @@ CREATE TABLE epochs (
     block_number      BIGINT        NOT NULL,                       -- [on-chain] block number
     tx_hash           CHAR(66)      NOT NULL,                       -- [on-chain] commitEpoch tx hash
     challenge_window_end INTEGER    NOT NULL,                       -- computed: committed_at + 43200 (12h)
-    finalized         BOOLEAN       NOT NULL DEFAULT FALSE,         -- set TRUE after challenge window passes
     swept             BOOLEAN       NOT NULL DEFAULT FALSE,         -- set TRUE after sweepExpired called
     created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW()          -- indexer metadata
 );

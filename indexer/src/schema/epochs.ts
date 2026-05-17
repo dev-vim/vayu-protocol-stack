@@ -18,7 +18,6 @@ export const epochs = onchainTable(
     blockNumber:        t.bigint().notNull(),
     txHash:             t.hex().notNull(),
     challengeWindowEnd: t.integer().notNull(),      // committedAt + 43200 (12h)
-    finalized:          t.boolean().notNull().default(false),
     swept:              t.boolean().notNull().default(false),
     ipfsStatus:         ipfsStatus("ipfs_status").notNull().default("PENDING"),
   }),

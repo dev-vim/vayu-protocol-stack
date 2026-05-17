@@ -742,7 +742,7 @@ contract VES_CommitEpoch_Test is SettlementBase {
         _registerRelay(relay);
     }
 
-    // All EpochCommitment fields (roots, relay, committedAt, finalized, swept)
+    // All EpochCommitment fields (roots, relay, committedAt, swept)
     // must reflect exactly what was passed in.
     function test_commitEpoch_storesCommitment() public {
         bytes32 dr = keccak256("dataRoot");
@@ -754,7 +754,6 @@ contract VES_CommitEpoch_Test is SettlementBase {
         assertEq(ec.rewardRoot, rr);
         assertEq(ec.relay,      relay);
         assertEq(ec.committedAt, block.timestamp);
-        assertFalse(ec.finalized);
         assertFalse(ec.swept);
     }
 

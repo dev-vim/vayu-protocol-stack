@@ -95,7 +95,6 @@ type Epoch {
   blockNumber: Int!
   txHash: Bytes32!
   challengeWindowEnd: Int!
-  finalized: Boolean!
   swept: Boolean!
 
   """Per-cell aggregates for this epoch"""
@@ -275,7 +274,6 @@ input EpochFilter {
   relay: Address
   minEpochId: Int
   maxEpochId: Int
-  finalized: Boolean
 }
 
 """Input for filtering readings"""

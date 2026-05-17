@@ -235,14 +235,14 @@ Inspect the commitment stored on-chain:
 
 ```bash
 cast call <settlement_address> \
-  "getEpochCommitment(uint32)((bytes32,bytes32,string,address,uint64,uint32,uint32,bool,bool))" \
+  "getEpochCommitment(uint32)((bytes32,bytes32,string,address,uint64,uint32,uint32,bool))" \
   <epoch_id> --rpc-url http://127.0.0.1:8545
 ```
 
-Returns a tuple of `(dataRoot, rewardRoot, ipfsCid, relay, committedAt, totalReadings, activeCells, finalized, swept)`:
+Returns a tuple of `(dataRoot, rewardRoot, ipfsCid, relay, committedAt, totalReadings, activeCells, swept)`:
 
 ```
-(0xb0f2aeb3..., 0x815bae63..., "QmRkCdBej...", 0xf39Fd6e5..., 1778401800, 3, 1, false, false)
+(0xb0f2aeb3..., 0x815bae63..., "QmRkCdBej...", 0xf39Fd6e5..., 1778401800, 3, 1, false)
 ```
 
 Fetch and inspect the pinned IPFS blob:
