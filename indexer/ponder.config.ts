@@ -10,7 +10,12 @@ const startBlock = process.env.VAYU_SETTLEMENT_START_BLOCK
   ? parseInt(process.env.VAYU_SETTLEMENT_START_BLOCK, 10)
   : 1;
 
+const port = process.env.PONDER_PORT
+  ? parseInt(process.env.PONDER_PORT, 10)
+  : 42069;
+
 export default createConfig({
+  port,
   chains: {
     // ── Local Anvil ─────────────────────────────────────────────────────────
     anvil: {

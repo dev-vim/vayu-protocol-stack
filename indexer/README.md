@@ -41,6 +41,7 @@ cp .env.example .env
 | `IPFS_GATEWAY_URL` | `http://localhost:8080/ipfs` | Gateway used to fetch epoch blobs by CID |
 | `SIDECAR_POLL_INTERVAL_MS` | `30000` | How often the sidecar polls for PENDING epochs |
 | `SIDECAR_BATCH_SIZE` | `10` | Max epochs processed per poll cycle |
+| `PONDER_PORT` | `42069` | Port for the Ponder GraphQL API and playground |
 
 ---
 
@@ -93,7 +94,7 @@ npm run dev
 ```
 
 Ponder creates the database schema automatically on first run and begins syncing from `VAYU_SETTLEMENT_START_BLOCK`.
-The GraphQL playground is available at `http://localhost:42069`.
+The GraphQL playground is available at `http://localhost:${PONDER_PORT:-42069}`.
 
 ### 5. Start the IPFS sidecar
 
