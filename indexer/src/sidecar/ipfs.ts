@@ -1,5 +1,5 @@
 const IPFS_GATEWAY_URL =
-  (process.env.IPFS_GATEWAY_URL || "http://localhost:8080/ipfs").replace(/\/$/, "");
+  (process.env.IPFS_GATEWAY_URL || "http://localhost:8081/ipfs").replace(/\/$/, "");
 
 const MAX_ATTEMPTS   = 3;
 const BASE_DELAY_MS  = 1_000;

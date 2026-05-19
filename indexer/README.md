@@ -38,7 +38,7 @@ cp .env.example .env
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/vayu_indexer` | PostgreSQL connection string |
 | `VAYU_SETTLEMENT_ADDRESS` | `0x000…` | Deployed `VayuEpochSettlement` address |
 | `VAYU_SETTLEMENT_START_BLOCK` | `1` | First block to index (skip pre-deployment history) |
-| `IPFS_GATEWAY_URL` | `http://localhost:8080/ipfs` | Gateway used to fetch epoch blobs by CID |
+| `IPFS_GATEWAY_URL` | `http://localhost:8081/ipfs` | Gateway used to fetch epoch blobs by CID |
 | `SIDECAR_POLL_INTERVAL_MS` | `30000` | How often the sidecar polls for PENDING epochs |
 | `SIDECAR_BATCH_SIZE` | `10` | Max epochs processed per poll cycle |
 | `PONDER_PORT` | `42069` | Port for the Ponder GraphQL API and playground |
@@ -81,13 +81,30 @@ DEPLOY_FAUCET=true REGISTER_RELAY=true \
 
 Note the `VayuEpochSettlement` address from the deploy output and set `VAYU_SETTLEMENT_ADDRESS` in `.env`.
 
-### 3. Install dependencies
+### 3. Start the relay
+
+The relay is the write-path service that aggregates readings and commits each epoch on-chain.
+The indexer has nothing to index until at least one `EpochCommitted` transaction lands.
+
+```bash
+# From relay/ — in a new terminal
+export RELAY_CHAIN_SETTLEMENT_ADDRESS=<address from deploy output>
+export RELAY_CHAIN_RPC_URL=http://localhost:8545
+export RELAY_CHAIN_ON_CHAIN_COMMIT_ENABLED=true
+export RELAY_CHAIN_RELAY_PRIVATE_KEY=<relay wallet private key, no 0x prefix>
+./mvn spring-boot:run   # default port: 8080
+```
+
+See [relay/README.md](../relay/README.md) for the full configuration reference including IPFS provider,
+EIP-712 domain settings, and epoch timing parameters.
+
+### 4. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 4. Start the Ponder indexer
+### 5. Start the Ponder indexer
 
 ```bash
 npm run dev
@@ -96,7 +113,7 @@ npm run dev
 Ponder creates the database schema automatically on first run and begins syncing from `VAYU_SETTLEMENT_START_BLOCK`.
 The GraphQL playground is available at `http://localhost:${PONDER_PORT:-42069}`.
 
-### 5. Start the IPFS sidecar
+### 6. Start the IPFS sidecar
 
 In a separate terminal:
 

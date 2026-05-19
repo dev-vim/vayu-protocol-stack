@@ -15,7 +15,7 @@ All runtime values are controlled via environment variables. Defaults are produc
 
 | Variable | Default | Description |
 |---|---|---|
-| `RELAY_PORT` | `3000` | HTTP listen port |
+| `RELAY_PORT` | `8080` | HTTP listen port |
 | `RELAY_LOG_LEVEL` | `INFO` | Log level for `protocol.vayu.*` (`DEBUG` for verbose) |
 | **Epoch** | | |
 | `RELAY_EPOCH_DURATION_SECONDS` | `3600` | Epoch length in seconds |
@@ -72,7 +72,7 @@ source .env.local && mvn spring-boot:run
 Confirm it is healthy:
 
 ```bash
-curl -s http://localhost:3000/v1/health | jq .
+curl -s http://localhost:8080/v1/health | jq .
 ```
 
 ### 3. Submit readings
@@ -89,7 +89,7 @@ for REPORTER in \
   "0x1111111111111111111111111111111111111111" \
   "0x2222222222222222222222222222222222222222" \
   "0x3333333333333333333333333333333333333333"; do
-  curl -s -X POST http://localhost:3000/v1/readings \
+  curl -s -X POST http://localhost:8080/v1/readings \
     -H "Content-Type: application/json" \
     -d "{\"reporter\":\"$REPORTER\",\"h3Index\":\"$H3\",\"epochId\":$EPOCH,\"timestamp\":$(date +%s),\"aqi\":42,\"pm25\":15,\"signature\":\"$SIG\"}"
   echo
@@ -210,7 +210,7 @@ for REPORTER in \
   "0x1111111111111111111111111111111111111111" \
   "0x2222222222222222222222222222222222222222" \
   "0x3333333333333333333333333333333333333333"; do
-  curl -s -X POST http://localhost:3000/v1/readings \
+  curl -s -X POST http://localhost:8080/v1/readings \
     -H "Content-Type: application/json" \
     -d "{\"reporter\":\"$REPORTER\",\"h3Index\":\"$H3\",\"epochId\":$EPOCH,\"timestamp\":$(date +%s),\"aqi\":42,\"pm25\":15,\"signature\":\"$SIG\"}"
   echo
