@@ -47,64 +47,36 @@ cp .env.example .env
 
 ## Local Development
 
-### 1. Start dependencies
+The following services must be running before the indexer will start successfully.
+See the root README for a complete stack bring-up guide.
+
+**Infrastructure:**
 
 ```bash
 # PostgreSQL
 docker run -d \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=vayu_indexer \
-  -p 5432:5432 \
-  --name vayu-pg \
-  postgres:15
+  -p 5432:5432 --name vayu-pg postgres:15
 
-# Local IPFS gateway (Kubo)
-docker run -d \
-  -p 5001:5001 \
-  -p 8080:8080 \
-  --name ipfs-kubo \
-  ipfs/kubo:latest
+# Kubo IPFS — gateway mapped to 8081 to avoid collision with relay on 8080
+docker run -d -p 5001:5001 -p 8081:8080 --name ipfs-kubo ipfs/kubo:latest
 ```
 
-### 2. Start Anvil and deploy contracts
+**Protocol services:**
 
-```bash
-anvil  # terminal 1
+| Service | Reference |
+|---|---|
+| Anvil + deployed contracts | [`contracts/README.md`](../contracts/README.md) — note the `VayuEpochSettlement` address and set `VAYU_SETTLEMENT_ADDRESS` in `.env` |
+| Relay (on-chain commit mode) | [`relay/README.md`](../relay/README.md) — the indexer has nothing to index until the relay commits on-chain |
 
-# From contracts/
-export DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-DEPLOY_FAUCET=true REGISTER_RELAY=true \
-  forge script script/DeployVayuCore.s.sol \
-  --rpc-url http://127.0.0.1:8545 --broadcast -vvvv
-```
-
-Note the `VayuEpochSettlement` address from the deploy output and set `VAYU_SETTLEMENT_ADDRESS` in `.env`.
-
-### 3. Start the relay
-
-The relay is the write-path service that aggregates readings and commits each epoch on-chain.
-The indexer has nothing to index until at least one `EpochCommitted` transaction lands.
-
-```bash
-# From relay/ — in a new terminal
-export RELAY_CHAIN_SETTLEMENT_ADDRESS=<address from deploy output>
-export RELAY_CHAIN_RPC_URL=http://localhost:8545
-export RELAY_CHAIN_ON_CHAIN_COMMIT_ENABLED=true
-export RELAY_CHAIN_RELAY_PRIVATE_KEY=<relay wallet private key, no 0x prefix>
-./mvn spring-boot:run   # default port: 8080
-```
-
-See [relay/README.md](../relay/README.md) for the full configuration reference including IPFS provider,
-EIP-712 domain settings, and epoch timing parameters.
-
-### 4. Install dependencies
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 5. Start the Ponder indexer
+### 2. Start the Ponder indexer
 
 ```bash
 npm run dev
@@ -113,7 +85,7 @@ npm run dev
 Ponder creates the database schema automatically on first run and begins syncing from `VAYU_SETTLEMENT_START_BLOCK`.
 The GraphQL playground is available at `http://localhost:${PONDER_PORT:-42069}`.
 
-### 6. Start the IPFS sidecar
+### 3. Start the IPFS sidecar
 
 In a separate terminal:
 
