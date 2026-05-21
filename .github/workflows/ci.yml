@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel any in-progress run for the same branch/PR
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── Solidity contracts ───────────────────────────────────────────────────────
+  contracts:
+    name: Contracts (Foundry)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # forge-std and openzeppelin-contracts are git submodules
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Test
+        run: forge test -vvv
+
+  # ── Spring Boot relay ────────────────────────────────────────────────────────
+  relay:
+    name: Relay (Maven / Java 21)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Test
+        run: mvn -B test
+
+  # ── Ponder indexer ───────────────────────────────────────────────────────────
+  indexer:
+    name: Indexer (Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: indexer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: indexer/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+  # ── Next.js dashboard ────────────────────────────────────────────────────────
+  dashboard:
+    name: Dashboard (Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # next build performs TypeScript type-checking and catches build errors
+      - name: Build
+        run: npm run build
+        env:
+          # Prevent Next.js from attempting to reach Ponder at build time.
+          # Server components that call fetchGraphQL will fail gracefully
+          # (the page renders an empty-state UI) rather than failing the build.
+          PONDER_URL: http://localhost:42069
