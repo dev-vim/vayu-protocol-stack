@@ -15,7 +15,7 @@ All runtime values are controlled via environment variables. Defaults are produc
 
 | Variable | Default | Description |
 |---|---|---|
-| `RELAY_PORT` | `3000` | HTTP listen port |
+| `RELAY_PORT` | `8080` | HTTP listen port |
 | `RELAY_LOG_LEVEL` | `INFO` | Log level for `protocol.vayu.*` (`DEBUG` for verbose) |
 | **Epoch** | | |
 | `RELAY_EPOCH_DURATION_SECONDS` | `3600` | Epoch length in seconds |
@@ -72,7 +72,7 @@ source .env.local && mvn spring-boot:run
 Confirm it is healthy:
 
 ```bash
-curl -s http://localhost:3000/v1/health | jq .
+curl -s http://localhost:8080/v1/health | jq .
 ```
 
 ### 3. Submit readings
@@ -89,7 +89,7 @@ for REPORTER in \
   "0x1111111111111111111111111111111111111111" \
   "0x2222222222222222222222222222222222222222" \
   "0x3333333333333333333333333333333333333333"; do
-  curl -s -X POST http://localhost:3000/v1/readings \
+  curl -s -X POST http://localhost:8080/v1/readings \
     -H "Content-Type: application/json" \
     -d "{\"reporter\":\"$REPORTER\",\"h3Index\":\"$H3\",\"epochId\":$EPOCH,\"timestamp\":$(date +%s),\"aqi\":42,\"pm25\":15,\"signature\":\"$SIG\"}"
   echo
@@ -124,44 +124,17 @@ Requires Anvil running locally and the contracts deployed. The relay startup gua
 calls `isActiveRelay()` on the settlement contract before accepting traffic — the
 deployer wallet must be registered as a relay first.
 
-### 1. Start Anvil and a local IPFS node
+**Prerequisites:** Ensure Anvil is running and `VayuEpochSettlement` is deployed with
+`REGISTER_RELAY=true` — see [`contracts/README.md`](../contracts/README.md). Note the
+`VayuEpochSettlement` address from the deploy output; you will need it in step 2.
+
+### 1. Start a local IPFS node
 
 ```bash
-anvil   # terminal 1 — keeps running
 docker run -d -p 5001:5001 --name ipfs-kubo ipfs/kubo:latest
 ```
 
-### 2. Deploy contracts
-
-From the `contracts/` directory. `DEPLOY_FAUCET=true` seeds a testnet faucet with
-100k VAYU; `REGISTER_RELAY=true` approves `MIN_RELAY_STAKE` (10k VAYU) and calls
-`registerRelay()` so the relay startup guard passes immediately.
-
-```bash
-cd ../contracts
-
-export DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-
-DEPLOY_FAUCET=true \
-REGISTER_RELAY=true \
-forge script script/DeployVayuCore.s.sol \
-  --rpc-url http://127.0.0.1:8545 --broadcast -vvvv
-```
-
-The script prints a summary — note the `VayuEpochSettlement` address.
-Anvil is deterministic: with the default account at nonce 0 these addresses are the same every time:
-
-```
-=== Vayu Protocol Deployment ===
-Deployer:             0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-VayuRewards:          0x5FbDB2315678afecb367f032d93F642f64180aa3
-VayuToken:            0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-VayuEpochSettlement:  0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
-VayuFaucet:           0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
-Relay registered:     0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-```
-
-### 3. Configure and start the relay
+### 2. Configure and start the relay
 
 Add the on-chain vars to `.env.local` (in addition to the base defaults from `.env.local.example`):
 
@@ -196,7 +169,7 @@ is registered you will see:
 INFO  ChainConfig - Relay registration confirmed: 0xf39F... is active on 0x9fE4...
 ```
 
-### 4. Submit readings
+### 3. Submit readings
 
 Same as Mode A — use the same curl loop with the current epoch ID:
 
@@ -210,14 +183,14 @@ for REPORTER in \
   "0x1111111111111111111111111111111111111111" \
   "0x2222222222222222222222222222222222222222" \
   "0x3333333333333333333333333333333333333333"; do
-  curl -s -X POST http://localhost:3000/v1/readings \
+  curl -s -X POST http://localhost:8080/v1/readings \
     -H "Content-Type: application/json" \
     -d "{\"reporter\":\"$REPORTER\",\"h3Index\":\"$H3\",\"epochId\":$EPOCH,\"timestamp\":$(date +%s),\"aqi\":42,\"pm25\":15,\"signature\":\"$SIG\"}"
   echo
 done
 ```
 
-### 5. Verify the on-chain commit
+### 4. Verify the on-chain commit
 
 Wait up to 60 seconds for the epoch to seal. The relay logs the transaction hash:
 

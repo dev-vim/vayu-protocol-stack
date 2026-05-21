@@ -38,7 +38,7 @@ cp .env.example .env
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/vayu_indexer` | PostgreSQL connection string |
 | `VAYU_SETTLEMENT_ADDRESS` | `0x000…` | Deployed `VayuEpochSettlement` address |
 | `VAYU_SETTLEMENT_START_BLOCK` | `1` | First block to index (skip pre-deployment history) |
-| `IPFS_GATEWAY_URL` | `http://localhost:8080/ipfs` | Gateway used to fetch epoch blobs by CID |
+| `IPFS_GATEWAY_URL` | `http://localhost:8081/ipfs` | Gateway used to fetch epoch blobs by CID |
 | `SIDECAR_POLL_INTERVAL_MS` | `30000` | How often the sidecar polls for PENDING epochs |
 | `SIDECAR_BATCH_SIZE` | `10` | Max epochs processed per poll cycle |
 | `PONDER_PORT` | `42069` | Port for the Ponder GraphQL API and playground |
@@ -47,47 +47,36 @@ cp .env.example .env
 
 ## Local Development
 
-### 1. Start dependencies
+The following services must be running before the indexer will start successfully.
+See the root README for a complete stack bring-up guide.
+
+**Infrastructure:**
 
 ```bash
 # PostgreSQL
 docker run -d \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=vayu_indexer \
-  -p 5432:5432 \
-  --name vayu-pg \
-  postgres:15
+  -p 5432:5432 --name vayu-pg postgres:15
 
-# Local IPFS gateway (Kubo)
-docker run -d \
-  -p 5001:5001 \
-  -p 8080:8080 \
-  --name ipfs-kubo \
-  ipfs/kubo:latest
+# Kubo IPFS — gateway mapped to 8081 to avoid collision with relay on 8080
+docker run -d -p 5001:5001 -p 8081:8080 --name ipfs-kubo ipfs/kubo:latest
 ```
 
-### 2. Start Anvil and deploy contracts
+**Protocol services:**
 
-```bash
-anvil  # terminal 1
+| Service | Reference |
+|---|---|
+| Anvil + deployed contracts | [`contracts/README.md`](../contracts/README.md) — note the `VayuEpochSettlement` address and set `VAYU_SETTLEMENT_ADDRESS` in `.env` |
+| Relay (on-chain commit mode) | [`relay/README.md`](../relay/README.md) — the indexer has nothing to index until the relay commits on-chain |
 
-# From contracts/
-export DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-DEPLOY_FAUCET=true REGISTER_RELAY=true \
-  forge script script/DeployVayuCore.s.sol \
-  --rpc-url http://127.0.0.1:8545 --broadcast -vvvv
-```
-
-Note the `VayuEpochSettlement` address from the deploy output and set `VAYU_SETTLEMENT_ADDRESS` in `.env`.
-
-### 3. Install dependencies
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 4. Start the Ponder indexer
+### 2. Start the Ponder indexer
 
 ```bash
 npm run dev
@@ -96,7 +85,7 @@ npm run dev
 Ponder creates the database schema automatically on first run and begins syncing from `VAYU_SETTLEMENT_START_BLOCK`.
 The GraphQL playground is available at `http://localhost:${PONDER_PORT:-42069}`.
 
-### 5. Start the IPFS sidecar
+### 3. Start the IPFS sidecar
 
 In a separate terminal:
 
