@@ -33,6 +33,22 @@ Run with verbose output and gas reporting:
 forge test -vvv --gas-report
 ```
 
+## Coverage
+
+Measured with `forge coverage --ir-minimum` (the `--ir-minimum` flag is required to avoid a stack-too-deep compiler error in `VayuEpochSettlement`). Invariant tests (`VayuInvariants.t.sol`) run under a separate fuzzer and are not reflected here.
+
+| Contract | Lines | Statements | Branches | Functions |
+|---|---|---|---|---|
+| `VayuEpochSettlement` | 93.68% | 92.98% | 89.02% | 100% |
+| `VayuFaucet` | 100% | 100% | 100% | 100% |
+| `VayuRewards` | 100% | 100% | 100% | 100% |
+| `VayuToken` | 100% | 100% | 100% | 100% |
+| `VayuTypes` | 100% | 100% | 100% | 100% |
+
+```shell
+forge coverage --ir-minimum --no-match-path "test/VayuInvariants.t.sol"
+```
+
 ## Format
 
 ```shell

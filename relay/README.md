@@ -1,5 +1,7 @@
 # Vayu Protocol Relay Service
 
+Spring Boot 3 / Java 21 service scoped to the **write path**. Accepts EIP-712 signed AQI readings from edge devices, buffers them in memory during each epoch window, then aggregates, pins a structured JSON blob to IPFS, and submits a `commitEpoch()` transaction to `VayuEpochSettlement`. Read and query endpoints are handled by the Ponder indexer.
+
 ## Local Development
 
 ### Prerequisites
