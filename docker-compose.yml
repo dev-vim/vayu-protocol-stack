@@ -107,10 +107,12 @@ services:
       RELAY_IPFS_KUBO_API_URL: http://ipfs:5001
       RELAY_SECURITY_EIP712_CHAIN_ID: "31337"
       RELAY_SECURITY_EIP712_VERIFYING_CONTRACT: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
-      # Shorter epochs for local dev
+      RELAY_SECURITY_SIGNATURE_VERIFICATION_ENABLED: "true"
+      # Shorter epochs and relaxed rate-limit for local dev (2 submissions per epoch)
       RELAY_EPOCH_DURATION_SECONDS: "60"
       RELAY_EPOCH_COMMIT_CHECK_INTERVAL_MS: "5000"
       RELAY_EPOCH_MIN_REPORTERS_PER_CELL: "1"
+      RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS: "30"
     depends_on:
       anvil:
         condition: service_healthy
