@@ -75,6 +75,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Codegen
+        run: npm run codegen
+
       - name: Test
         run: npm test
 
