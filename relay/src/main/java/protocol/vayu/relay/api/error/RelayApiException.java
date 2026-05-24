@@ -19,6 +19,10 @@ public class RelayApiException extends RuntimeException {
         return new RelayApiException(HttpStatus.BAD_REQUEST, "invalid_request", message, null);
     }
 
+    public static RelayApiException conflict(String message) {
+        return new RelayApiException(HttpStatus.CONFLICT, "duplicate_reading", message, null);
+    }
+
     public static RelayApiException rateLimited(String message, int retryAfter) {
         return new RelayApiException(HttpStatus.TOO_MANY_REQUESTS, "rate_limited", message, retryAfter);
     }

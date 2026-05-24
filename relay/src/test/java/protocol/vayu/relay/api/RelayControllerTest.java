@@ -129,9 +129,21 @@ class RelayControllerTest {
                         .content(Objects.requireNonNull(payload)))
                 .andExpect(status().isOk());
 
+        // Second submission uses a different cell to avoid the replay guard — we are testing
+        // the rate limiter here, not dedup.
+        String payload2 = payload(
+                "0x4444444444444444444444444444444444444444",
+                "0x0882830a2fffffff",
+                now / 3600,
+                180,
+                500,
+                now,
+                false
+        );
+
         mockMvc.perform(post("/v1/readings")
                         .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
-                        .content(Objects.requireNonNull(payload)))
+                        .content(Objects.requireNonNull(payload2)))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error").value("rate_limited"))
                 .andExpect(jsonPath("$.retryAfter").value(Objects.requireNonNull(greaterThan(0))));

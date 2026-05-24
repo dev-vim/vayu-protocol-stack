@@ -162,10 +162,21 @@ class RelayControllerSigEnabledTest {
                         .content(body))
                 .andExpect(status().isOk());
 
-        // Second submission within the rate-limit window must be rejected.
+        // Second submission uses a different cell so the replay guard doesn't fire first —
+        // we are testing the rate limiter, not dedup.
+        ReadingSubmissionRequest req2 = new ReadingSubmissionRequest(
+                REPORTER_5_ADDR, "0x0882830a2fffffff",
+                now / EPOCH_DURATION, now,
+                req.aqi(), req.pm25(),
+                null, null, null, null, null,
+                "0x" + "0".repeat(130)
+        );
+        String sig2 = signer().sign(req2, REPORTER_5_KEY);
+        String body2 = payload(req2, sig2);
+
         mockMvc.perform(post("/v1/readings")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(body2))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error").value("rate_limited"))
                 .andExpect(jsonPath("$.retryAfter").value(greaterThan(0)));

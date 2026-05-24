@@ -5,7 +5,7 @@ import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
-import protocol.vayu.relay.service.commit.InMemoryEpochReadingStore;
+import protocol.vayu.relay.service.commit.InMemoryEpochIngressWindow;
 import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
@@ -188,7 +188,7 @@ class ReadingIngestionServiceTest {
 
     @Test
     void ingestShouldQueueAcceptedReadingForCommitCycle() {
-        InMemoryEpochReadingStore store = new InMemoryEpochReadingStore();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
         ReadingIngestionService queueingService = new ReadingIngestionService(
                 relayProperties(false, false),
                 request -> true,
@@ -207,6 +207,65 @@ class ReadingIngestionServiceTest {
         assertEquals(1, store.pendingReadings());
         assertEquals(1, store.drainEpoch(request.epochId()).size());
         assertEquals(0, store.pendingReadings());
+    }
+
+    @Test
+    void ingestShouldRejectDuplicateReadingForSameEpochAndCell() {
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                store
+        );
+
+        long now = Instant.now().getEpochSecond();
+        // Two requests with the same reporter + epochId + h3Index but submitted a second apart
+        // to avoid the rate-limit window firing first (different reporters used here to isolate
+        // the replay guard, but same cell is the key factor).
+        ReadingSubmissionRequest first = validRequest(
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", now);
+        ReadingSubmissionRequest duplicate = validRequest(
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", now);
+
+        ReadingAcceptedResponse accepted = svc.ingest(first);
+        assertEquals("accepted", accepted.status());
+
+        RelayApiException ex = assertThrows(RelayApiException.class, () -> svc.ingest(duplicate));
+
+        assertEquals(HttpStatus.CONFLICT, ex.status());
+        assertEquals("duplicate_reading", ex.errorCode());
+        assertEquals(1, store.pendingReadings());
+    }
+
+    @Test
+    void ingestShouldAcceptSameReporterDifferentCellsInSameEpoch() {
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                store
+        );
+
+        // Verify enqueueIfNotSeen allows (reporter, epoch, cell1) and (reporter, epoch, cell2)
+        // independently. We bypass the service-level rate limit by calling enqueueIfNotSeen
+        // directly on the store — the rate limit is a time guard, not a cell guard.
+        long now = Instant.now().getEpochSecond();
+        long epochId = now / 3600;
+        ReadingSubmissionRequest cell1 = new ReadingSubmissionRequest(
+                "0xcccccccccccccccccccccccccccccccccccccccc", "0x0882830a1fffffff",
+                epochId, now, 120, 350, null, null, null, null, null, signature());
+        ReadingSubmissionRequest cell2 = new ReadingSubmissionRequest(
+                "0xcccccccccccccccccccccccccccccccccccccccc", "0x0882830a2fffffff",
+                epochId, now, 130, 360, null, null, null, null, null, signature());
+
+        String key1 = "0xcccccccccccccccccccccccccccccccccccccccc:" + epochId + ":0x0882830a1fffffff";
+        String key2 = "0xcccccccccccccccccccccccccccccccccccccccc:" + epochId + ":0x0882830a2fffffff";
+
+        assertTrue(store.enqueueIfNotSeen(cell1, key1));
+        assertTrue(store.enqueueIfNotSeen(cell2, key2));
+        assertEquals(2, store.pendingReadings());
     }
 
     private ReadingSubmissionRequest validRequest(String reporter, long timestamp) {
