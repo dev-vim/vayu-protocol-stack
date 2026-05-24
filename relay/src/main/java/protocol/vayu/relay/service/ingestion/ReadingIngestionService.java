@@ -67,8 +67,8 @@ public class ReadingIngestionService {
         validateTimestampFreshness(request.timestamp(), now);
         validateEpochConsistency(request.epochId(), request.timestamp());
         validateH3Resolution(request.h3Index());
-        enforceReporterRateLimit(request.reporter(), now);
         validateSignature(request);
+        enforceReporterRateLimit(request.reporter(), now);
         validateReporterStake(request.reporter());
         epochReadingStore.enqueue(request);
 
@@ -154,7 +154,8 @@ public class ReadingIngestionService {
 
     private void enforceReporterRateLimit(String reporter, long now) {
         long rateLimitWindow = Math.max(1, relayProperties.validation().rateLimitWindowSeconds());
-        reporterLastReading.compute(reporter, (ignored, lastSeen) -> {
+        String normalizedReporter = reporter == null ? null : reporter.toLowerCase();
+        reporterLastReading.compute(normalizedReporter, (ignored, lastSeen) -> {
             if (lastSeen != null) {
                 long elapsed = now - lastSeen;
                 if (elapsed < rateLimitWindow) {

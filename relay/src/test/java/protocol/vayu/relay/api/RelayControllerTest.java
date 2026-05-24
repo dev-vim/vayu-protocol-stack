@@ -197,6 +197,49 @@ class RelayControllerTest {
                 .andExpect(jsonPath("$.error").value("invalid_request"));
     }
 
+    @Test
+    void submitReadingWithPm25BelowMinimumShouldBeRejected() throws Exception {
+        long now = Instant.now().getEpochSecond();
+        String payload = payload(
+                "0x8888888888888888888888888888888888888888",
+                "0x0882830a1fffffff",
+                now / 3600,
+                100,
+                0,      // pm25 below minimum (< 1)
+                now,
+                false
+        );
+
+        mockMvc.perform(post("/v1/readings")
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_request"));
+    }
+
+    @Test
+    void successfulSubmissionResponseShouldIncludeEpochIdAndReceivedAt() throws Exception {
+        long now = Instant.now().getEpochSecond();
+        long expectedEpochId = now / 3600;
+        String payload = payload(
+                "0x9999999999999999999999999999999999999999",
+                "0x0882830a1fffffff",
+                expectedEpochId,
+                120,
+                300,
+                now,
+                false
+        );
+
+        mockMvc.perform(post("/v1/readings")
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(payload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("accepted"))
+                .andExpect(jsonPath("$.epochId").value(expectedEpochId))
+                .andExpect(jsonPath("$.receivedAt").value(greaterThan(0)));
+    }
+
     private static String payload(
             String reporter,
             String h3Index,
