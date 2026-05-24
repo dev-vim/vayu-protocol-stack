@@ -4,6 +4,7 @@ import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.config.RelayProperties;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregator;
+import protocol.vayu.relay.service.commit.EpochIngressWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,20 +19,20 @@ public class EpochCommitCoordinator {
     private static final Logger LOG = LoggerFactory.getLogger(EpochCommitCoordinator.class);
 
     private final RelayProperties relayProperties;
-    private final EpochReadingStore epochReadingStore;
+    private final EpochIngressWindow epochIngressWindow;
     private final EpochAggregator epochAggregator;
     private final EpochCommitPublisher epochCommitPublisher;
     private final CommitCycleState commitCycleState;
 
     public EpochCommitCoordinator(
             RelayProperties relayProperties,
-            EpochReadingStore epochReadingStore,
+            EpochIngressWindow epochIngressWindow,
             EpochAggregator epochAggregator,
             EpochCommitPublisher epochCommitPublisher,
             CommitCycleState commitCycleState
     ) {
         this.relayProperties = relayProperties;
-        this.epochReadingStore = epochReadingStore;
+        this.epochIngressWindow = epochIngressWindow;
         this.epochAggregator = epochAggregator;
         this.epochCommitPublisher = epochCommitPublisher;
         this.commitCycleState = commitCycleState;
@@ -57,7 +58,7 @@ public class EpochCommitCoordinator {
 
         for (long epochId = startEpoch; epochId <= latestSealableEpoch; epochId++) {
             try {
-                List<ReadingSubmissionRequest> drained = epochReadingStore.drainEpoch(epochId);
+                List<ReadingSubmissionRequest> drained = epochIngressWindow.drainEpoch(epochId);
                 EpochAggregate aggregate = epochAggregator.aggregate(epochId, drained);
 
                 if (aggregate.totalReadings() == 0) {

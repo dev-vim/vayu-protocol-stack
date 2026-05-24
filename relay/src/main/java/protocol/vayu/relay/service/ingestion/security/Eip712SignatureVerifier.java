@@ -28,6 +28,11 @@ public class Eip712SignatureVerifier implements SignatureVerifier {
                     .getBytes(StandardCharsets.UTF_8)
     );
 
+    // secp256k1 curve order; used to enforce the low-s malleability policy.
+    private static final BigInteger SECP256K1_N =
+            new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16);
+    private static final BigInteger SECP256K1_HALF_N = SECP256K1_N.shiftRight(1);
+
     private final RelayProperties relayProperties;
 
     public Eip712SignatureVerifier(RelayProperties relayProperties) {
@@ -39,6 +44,14 @@ public class Eip712SignatureVerifier implements SignatureVerifier {
         try {
             byte[] digest = buildDigest(request);
             SignatureData signature = parseSignature(request.signature());
+
+            // Reject high-s signatures — both (r,s) and (r,n−s) are valid under vanilla
+            // ECDSA, but only the low-s form is canonical. Accepting both would let an
+            // attacker submit the same reading twice with different sig bytes.
+            if (new BigInteger(1, signature.getS()).compareTo(SECP256K1_HALF_N) > 0) {
+                return false;
+            }
+
             int recId = toRecoveryId(signature.getV()[0]);
             if (recId < 0) {
                 return false;

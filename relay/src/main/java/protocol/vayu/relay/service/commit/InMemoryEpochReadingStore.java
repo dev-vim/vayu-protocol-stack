@@ -1,7 +1,6 @@
 package protocol.vayu.relay.service.commit;
 
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
-import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +8,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 
-@Component
+// Not a Spring component — superseded by InMemoryEpochIngressWindow for production use.
+// Retained for use in unit tests that need a plain EpochReadingStore.
 public class InMemoryEpochReadingStore implements EpochReadingStore {
 
     private final ConcurrentMap<Long, ConcurrentLinkedQueue<ReadingSubmissionRequest>> readingsByEpoch =

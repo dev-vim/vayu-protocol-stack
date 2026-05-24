@@ -66,8 +66,10 @@ docker run -d -p 5001:5001 --name ipfs-kubo ipfs/kubo:latest
 
 ```bash
 cp .env.local.example .env.local
-# .env.local already sets RELAY_EPOCH_DURATION_SECONDS=60 and
-# RELAY_EPOCH_COMMIT_CHECK_INTERVAL_MS=5000 for fast local cycling.
+# .env.local overrides three production defaults for fast local cycling:
+#   RELAY_EPOCH_DURATION_SECONDS=60            (1-minute epochs instead of 1 hour)
+#   RELAY_EPOCH_COMMIT_CHECK_INTERVAL_MS=5000  (commit worker polls every 5 s)
+#   RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS=30  (30 s window → 2 submissions per epoch)
 source .env.local && mvn spring-boot:run
 ```
 

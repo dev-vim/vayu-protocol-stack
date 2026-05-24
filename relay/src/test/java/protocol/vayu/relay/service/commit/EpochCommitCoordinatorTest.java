@@ -17,7 +17,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldCommitSealedEpochReadings() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochReadingStore store = new InMemoryEpochReadingStore();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -67,7 +67,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldAdvanceWatermarkOnEmptyEpoch() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochReadingStore store = new InMemoryEpochReadingStore();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -95,7 +95,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldResumeFromLastCommittedEpochPlusOne() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochReadingStore store = new InMemoryEpochReadingStore();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -131,7 +131,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldCommitMultipleSequentialEpochs() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochReadingStore store = new InMemoryEpochReadingStore();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -167,7 +167,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldBreakAndRecordFailureOnPublisherError() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochReadingStore store = new InMemoryEpochReadingStore();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -201,7 +201,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldAlwaysUpdateHeartbeat() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochReadingStore store = new InMemoryEpochReadingStore();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 

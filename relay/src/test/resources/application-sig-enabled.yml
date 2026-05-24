@@ -1,0 +1,8 @@
+relay:
+  security:
+    signature-verification-enabled: true
+    eip712:
+      chain-id: 31337
+      verifying-contract: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+  epoch:
+    duration-seconds: 60

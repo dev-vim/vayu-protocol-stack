@@ -4,7 +4,7 @@ import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
-import protocol.vayu.relay.service.commit.EpochReadingStore;
+import protocol.vayu.relay.service.commit.EpochIngressWindow;
 import protocol.vayu.relay.service.ingestion.security.ReporterStakeChecker;
 import protocol.vayu.relay.service.ingestion.security.SignatureVerifier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +21,7 @@ public class ReadingIngestionService {
     private final RelayProperties relayProperties;
     private final SignatureVerifier signatureVerifier;
     private final ReporterStakeChecker reporterStakeChecker;
-    private final EpochReadingStore epochReadingStore;
+    private final EpochIngressWindow epochIngressWindow;
     private final ConcurrentMap<String, Long> reporterLastReading = new ConcurrentHashMap<>();
 
     @Autowired
@@ -29,12 +29,12 @@ public class ReadingIngestionService {
             RelayProperties relayProperties,
             SignatureVerifier signatureVerifier,
             ReporterStakeChecker reporterStakeChecker,
-            EpochReadingStore epochReadingStore
+            EpochIngressWindow epochIngressWindow
     ) {
         this.relayProperties = relayProperties;
         this.signatureVerifier = signatureVerifier;
         this.reporterStakeChecker = reporterStakeChecker;
-        this.epochReadingStore = epochReadingStore;
+        this.epochIngressWindow = epochIngressWindow;
     }
 
     ReadingIngestionService(
@@ -42,10 +42,15 @@ public class ReadingIngestionService {
             SignatureVerifier signatureVerifier,
             ReporterStakeChecker reporterStakeChecker
     ) {
-        this(relayProperties, signatureVerifier, reporterStakeChecker, new EpochReadingStore() {
+        this(relayProperties, signatureVerifier, reporterStakeChecker, new EpochIngressWindow() {
+            @Override
+            public boolean enqueueIfNotSeen(ReadingSubmissionRequest request, String replayKey) {
+                return true; // no-op for lightweight unit tests
+            }
+
             @Override
             public void enqueue(ReadingSubmissionRequest request) {
-                // No-op fallback constructor used by lightweight unit tests.
+                // no-op
             }
 
             @Override
@@ -67,10 +72,17 @@ public class ReadingIngestionService {
         validateTimestampFreshness(request.timestamp(), now);
         validateEpochConsistency(request.epochId(), request.timestamp());
         validateH3Resolution(request.h3Index());
-        enforceReporterRateLimit(request.reporter(), now);
         validateSignature(request);
+
+        String replayKey = request.reporter().toLowerCase()
+                + ":" + request.epochId()
+                + ":" + request.h3Index().toLowerCase();
+        if (!epochIngressWindow.enqueueIfNotSeen(request, replayKey)) {
+            throw RelayApiException.conflict("duplicate reading for this epoch and cell");
+        }
+
+        enforceReporterRateLimit(request.reporter(), now);
         validateReporterStake(request.reporter());
-        epochReadingStore.enqueue(request);
 
         return new ReadingAcceptedResponse("accepted", request.epochId(), now);
     }
@@ -154,7 +166,8 @@ public class ReadingIngestionService {
 
     private void enforceReporterRateLimit(String reporter, long now) {
         long rateLimitWindow = Math.max(1, relayProperties.validation().rateLimitWindowSeconds());
-        reporterLastReading.compute(reporter, (ignored, lastSeen) -> {
+        String normalizedReporter = reporter.toLowerCase();
+        reporterLastReading.compute(normalizedReporter, (ignored, lastSeen) -> {
             if (lastSeen != null) {
                 long elapsed = now - lastSeen;
                 if (elapsed < rateLimitWindow) {
