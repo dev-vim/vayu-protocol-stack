@@ -294,6 +294,15 @@ def main() -> None:
              "RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS=30 (2 submissions per 60 s epoch).",
     )
     parser.add_argument(
+        "--rate-limit-window",
+        type=int,
+        default=300,
+        metavar="SECONDS",
+        help="Assumed relay rate-limit window (RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS). "
+             "Used only to emit a warning when --interval is shorter. "
+             "Production default is 300 s; local compose uses 30 s.",
+    )
+    parser.add_argument(
         "--tamper",
         action="store_true",
         help="Flip the last byte of every signature before submitting. "
@@ -313,6 +322,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if args.epoch_duration < 1:
+        parser.error("--epoch-duration must be >= 1")
+
     n_reporters = max(1, min(args.reporters, len(REPORTERS)))
     n_cells     = max(1, min(args.cells, len(H3_CELLS)))
     reporters   = REPORTERS[:n_reporters]
@@ -330,15 +342,17 @@ def main() -> None:
     print(f"  rounds:             {args.rounds}")
     print(f"  reporters:          {n_reporters}  ({', '.join(r['label'] for r in reporters)})")
     print(f"  cells:              {n_cells}")
-    print(f"  rounds:             {args.rounds}")
     if dry_run:
         print(f"  mode:               dry-run (signatures computed, not submitted)")
     print()
 
-    if args.rounds > 1 and 0 < args.interval < 300 and not dry_run:
+    if args.rounds > 1 and 0 < args.interval < args.rate_limit_window and not dry_run:
         print(
-            "⚠  Warning: --interval is less than the relay's default rate-limit window (300 s).\n"
-            "   Rounds after the first may receive 429 responses from the relay.\n",
+            f"⚠  Warning: --interval ({args.interval}s) is less than the assumed rate-limit "
+            f"window ({args.rate_limit_window}s).\n"
+            "   Rounds after the first may receive 429 responses from the relay.\n"
+            "   Set --rate-limit-window to match RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS "
+            "if it differs from the default.",
             file=sys.stderr,
         )
 

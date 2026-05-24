@@ -166,7 +166,7 @@ public class ReadingIngestionService {
 
     private void enforceReporterRateLimit(String reporter, long now) {
         long rateLimitWindow = Math.max(1, relayProperties.validation().rateLimitWindowSeconds());
-        String normalizedReporter = reporter == null ? null : reporter.toLowerCase();
+        String normalizedReporter = reporter.toLowerCase();
         reporterLastReading.compute(normalizedReporter, (ignored, lastSeen) -> {
             if (lastSeen != null) {
                 long elapsed = now - lastSeen;
