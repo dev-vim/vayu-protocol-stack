@@ -1,10 +1,12 @@
 package protocol.vayu.relay.service.ingestion;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
+import protocol.vayu.relay.service.RelayMetrics;
 import protocol.vayu.relay.service.commit.InMemoryEpochIngressWindow;
 import org.springframework.http.HttpStatus;
 
@@ -188,7 +190,7 @@ class ReadingIngestionServiceTest {
 
     @Test
     void ingestShouldQueueAcceptedReadingForCommitCycle() {
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         ReadingIngestionService queueingService = new ReadingIngestionService(
                 relayProperties(false, false),
                 request -> true,
@@ -211,7 +213,7 @@ class ReadingIngestionServiceTest {
 
     @Test
     void ingestShouldRejectDuplicateReadingForSameEpochAndCell() {
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         ReadingIngestionService svc = new ReadingIngestionService(
                 relayProperties(false, false),
                 request -> true,
@@ -240,7 +242,7 @@ class ReadingIngestionServiceTest {
 
     @Test
     void ingestShouldAcceptSameReporterDifferentCellsInSameEpoch() {
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         ReadingIngestionService svc = new ReadingIngestionService(
                 relayProperties(false, false),
                 request -> true,
@@ -323,5 +325,193 @@ class ReadingIngestionServiceTest {
             eip712
         );
         return new RelayProperties(epoch, validation, security, null, null);
+    }
+
+    // ── Metrics wiring tests ──────────────────────────────────────────────────
+
+    @Test
+    void metricsShouldRecordAcceptedOnSuccess() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        svc.ingest(validRequest("0xaaaa000000000000000000000000000000000001", now));
+
+        assertEquals(1.0, registry.counter("vayu.readings.accepted").count());
+        assertEquals(0.0, registry.counter("vayu.readings.rejected", "reason", "validation_error").count());
+    }
+
+    @Test
+    void metricsShouldRecordValidationErrorOnBadAqi() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        ReadingSubmissionRequest bad = new ReadingSubmissionRequest(
+                "0xaaaa000000000000000000000000000000000002",
+                "0x0882830a1fffffff",
+                now / 3600, now,
+                0, 350, null, null, null, null, null,
+                signature());
+
+        assertThrows(RelayApiException.class, () -> svc.ingest(bad));
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "validation_error").count());
+        assertEquals(0.0, registry.counter("vayu.readings.accepted").count());
+    }
+
+    @Test
+    void metricsShouldRecordStaleTsOnOldTimestamp() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long stale = Instant.now().minusSeconds(1000).getEpochSecond();
+        assertThrows(RelayApiException.class, () -> svc.ingest(validRequest("0xaaaa000000000000000000000000000000000003", stale)));
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "stale_timestamp").count());
+    }
+
+    @Test
+    void metricsShouldRecordWrongEpochOnMismatch() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        long wrongEpoch = (now / 3600) + 99;
+        ReadingSubmissionRequest bad = new ReadingSubmissionRequest(
+                "0xaaaa000000000000000000000000000000000004",
+                "0x0882830a1fffffff",
+                wrongEpoch, now,
+                120, 350, null, null, null, null, null,
+                signature());
+
+        assertThrows(RelayApiException.class, () -> svc.ingest(bad));
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "wrong_epoch").count());
+    }
+
+    @Test
+    void metricsShouldRecordWrongResolutionOnBadH3() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        ReadingSubmissionRequest bad = new ReadingSubmissionRequest(
+                "0xaaaa000000000000000000000000000000000005",
+                "0x0872830a1fffffff",
+                now / 3600, now,
+                120, 350, null, null, null, null, null,
+                signature());
+
+        assertThrows(RelayApiException.class, () -> svc.ingest(bad));
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "wrong_resolution").count());
+    }
+
+    @Test
+    void metricsShouldRecordInvalidSigOnFailedVerification() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(true, false),
+                request -> false,
+                reporter -> true,
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        assertThrows(RelayApiException.class, () -> svc.ingest(validRequest("0xaaaa000000000000000000000000000000000006", now)));
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "invalid_signature").count());
+    }
+
+    @Test
+    void metricsShouldRecordDuplicateOnReplay() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                store,
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        String reporter = "0xaaaa000000000000000000000000000000000007";
+        svc.ingest(validRequest(reporter, now));
+        assertThrows(RelayApiException.class, () -> svc.ingest(validRequest(reporter, now)));
+
+        assertEquals(1.0, registry.counter("vayu.readings.accepted").count());
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "duplicate").count());
+    }
+
+    @Test
+    void metricsShouldRecordRateLimitedAfterFirstAccepted() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                store,
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        String reporter = "0xaaaa000000000000000000000000000000000008";
+        svc.ingest(validRequest(reporter, now));
+
+        // Different cell to bypass replay guard, same reporter to trigger rate limit
+        ReadingSubmissionRequest cell2 = new ReadingSubmissionRequest(
+                reporter, "0x0882830a2fffffff",
+                now / 3600, now,
+                120, 350, null, null, null, null, null,
+                signature());
+        assertThrows(RelayApiException.class, () -> svc.ingest(cell2));
+
+        assertEquals(1.0, registry.counter("vayu.readings.accepted").count());
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "rate_limited").count());
+    }
+
+    @Test
+    void metricsShouldRecordNoStakeWhenStakeCheckFails() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                reporter -> false,
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        assertThrows(RelayApiException.class, () -> svc.ingest(validRequest("0xaaaa000000000000000000000000000000000009", now)));
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "no_stake").count());
     }
 }
