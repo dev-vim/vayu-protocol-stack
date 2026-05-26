@@ -27,26 +27,26 @@ public class InMemoryEpochIngressWindow implements EpochIngressWindow {
     }
 
     /**
-     * Atomically records {@code replayKey} for the reading's epoch and enqueues
-     * the reading only if the key had not been seen before.
-     *
-     * <p>The {@link Set#add} on a {@link ConcurrentHashMap#newKeySet()} is
-     * atomic, so exactly one concurrent caller wins when two threads race with
-     * the same key.
+     * Atomically claims {@code replayKey} for the reading's epoch without enqueuing it.
+     * The first caller for a given key wins; all subsequent callers for the same key
+     * receive {@code false}.
      */
     @Override
-    public boolean enqueueIfNotSeen(ReadingSubmissionRequest request, String replayKey) {
+    public boolean tryClaimReplayKey(long epochId, String replayKey) {
         Set<String> seen = seenKeysByEpoch.computeIfAbsent(
-                request.epochId(), ignored -> ConcurrentHashMap.newKeySet());
+                epochId, ignored -> ConcurrentHashMap.newKeySet());
+        return seen.add(replayKey);
+    }
 
-        if (!seen.add(replayKey)) {
-            return false;
+    /**
+     * Releases a previously claimed {@code replayKey} so the reporter can retry.
+     */
+    @Override
+    public void releaseReplayKey(long epochId, String replayKey) {
+        Set<String> seen = seenKeysByEpoch.get(epochId);
+        if (seen != null) {
+            seen.remove(replayKey);
         }
-
-        readingsByEpoch
-                .computeIfAbsent(request.epochId(), ignored -> new ConcurrentLinkedQueue<>())
-                .add(request);
-        return true;
     }
 
     /** Plain enqueue without dedup — used by {@link EpochReadingStore} consumers (e.g. tests). */

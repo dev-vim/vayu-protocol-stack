@@ -49,8 +49,13 @@ public class ReadingIngestionService {
     ) {
         this(relayProperties, signatureVerifier, reporterStakeChecker, new EpochIngressWindow() {
             @Override
-            public boolean enqueueIfNotSeen(ReadingSubmissionRequest request, String replayKey) {
+            public boolean tryClaimReplayKey(long epochId, String replayKey) {
                 return true; // no-op for lightweight unit tests
+            }
+
+            @Override
+            public void releaseReplayKey(long epochId, String replayKey) {
+                // no-op
             }
 
             @Override
@@ -101,17 +106,26 @@ public class ReadingIngestionService {
         String replayKey = request.reporter().toLowerCase()
                 + ":" + request.epochId()
                 + ":" + request.h3Index().toLowerCase();
-        if (!epochIngressWindow.enqueueIfNotSeen(request, replayKey)) {
+        if (!epochIngressWindow.tryClaimReplayKey(request.epochId(), replayKey)) {
             relayMetrics.recordRejectedDuplicate();
             throw RelayApiException.conflict("duplicate reading for this epoch and cell");
         }
 
         try { enforceReporterRateLimit(request.reporter(), now); }
-        catch (RelayApiException e) { relayMetrics.recordRejectedRateLimited(); throw e; }
+        catch (RelayApiException e) {
+            epochIngressWindow.releaseReplayKey(request.epochId(), replayKey);
+            relayMetrics.recordRejectedRateLimited();
+            throw e;
+        }
 
         try { validateReporterStake(request.reporter()); }
-        catch (RelayApiException e) { relayMetrics.recordRejectedNoStake(); throw e; }
+        catch (RelayApiException e) {
+            epochIngressWindow.releaseReplayKey(request.epochId(), replayKey);
+            relayMetrics.recordRejectedNoStake();
+            throw e;
+        }
 
+        epochIngressWindow.enqueue(request);
         relayMetrics.recordAccepted();
         return new ReadingAcceptedResponse("accepted", request.epochId(), now);
     }

@@ -241,6 +241,75 @@ class ReadingIngestionServiceTest {
     }
 
     @Test
+    void ingestShouldReleaseReplayKeyOnRateLimitSoRetryIsNotDuplicate() {
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+        // Rate limit window of 300s — both requests arrive at the same "now", so the
+        // second one is rate-limited.
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter -> true,
+                store
+        );
+
+        long now = Instant.now().getEpochSecond();
+        String reporter = "0xdddddddddddddddddddddddddddddddddddddddd";
+
+        // first request for cell1 accepted → key claimed + enqueued
+        svc.ingest(validRequest(reporter, now));
+        assertEquals(1, store.pendingReadings());
+
+        // second request for cell2 by the same reporter — passes replay guard (different cell)
+        // but hits rate limit; the key for cell2 must be released
+        ReadingSubmissionRequest cell2 = new ReadingSubmissionRequest(
+                reporter, "0x0882830a2fffffff",
+                now / 3600, now, 120, 350, null, null, null, null, null, signature());
+        assertThrows(RelayApiException.class, () -> svc.ingest(cell2));
+        assertEquals(1, store.pendingReadings()); // cell2 must NOT be in queue
+
+        // simulate reporter waiting out the rate-limit window by using a fresh service
+        // (same store, new rate-limit state) — cell2 should now be accepted, not conflict
+        ReadingIngestionService fresh = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter2 -> true,
+                store
+        );
+        ReadingSubmissionRequest cell2Retry = new ReadingSubmissionRequest(
+                reporter, "0x0882830a2fffffff",
+                now / 3600, now, 120, 350, null, null, null, null, null, signature());
+        fresh.ingest(cell2Retry);
+        assertEquals(2, store.pendingReadings()); // cell2 is now accepted
+    }
+
+    @Test
+    void ingestShouldReleaseReplayKeyOnNoStakeSoRetryIsNotDuplicate() {
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+        long now = Instant.now().getEpochSecond();
+        String reporter = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+        // first attempt: stake check fails → key must be released
+        ReadingIngestionService noStakeSvc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                r -> false,
+                store
+        );
+        assertThrows(RelayApiException.class, () -> noStakeSvc.ingest(validRequest(reporter, now)));
+        assertEquals(0, store.pendingReadings()); // must NOT be enqueued
+
+        // second attempt after staking: same cell should be accepted, not conflict
+        ReadingIngestionService stakedSvc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                r -> true,
+                store
+        );
+        stakedSvc.ingest(validRequest(reporter, now));
+        assertEquals(1, store.pendingReadings());
+    }
+
+    @Test
     void ingestShouldAcceptSameReporterDifferentCellsInSameEpoch() {
         InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         ReadingIngestionService svc = new ReadingIngestionService(
