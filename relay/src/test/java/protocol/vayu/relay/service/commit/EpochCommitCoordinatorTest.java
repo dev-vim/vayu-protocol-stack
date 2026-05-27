@@ -1,8 +1,10 @@
 package protocol.vayu.relay.service.commit;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.config.RelayProperties;
+import protocol.vayu.relay.service.RelayMetrics;
 import protocol.vayu.relay.service.commit.aggregation.DefaultEpochAggregator;
 
 import java.time.Instant;
@@ -17,7 +19,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldCommitSealedEpochReadings() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -30,12 +32,8 @@ class EpochCommitCoordinatorTest {
         );
 
         EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
-                properties,
-                store,
-                aggregator,
-                publisher,
-                state
-        );
+                properties, store, aggregator, publisher, state,
+                new RelayMetrics(new SimpleMeterRegistry()));
 
         long now = Instant.now().getEpochSecond();
         long epochDuration = properties.epoch().durationSeconds();
@@ -67,7 +65,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldAdvanceWatermarkOnEmptyEpoch() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -80,12 +78,8 @@ class EpochCommitCoordinatorTest {
         );
 
         EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
-                properties,
-                store,
-                aggregator,
-                publisher,
-                state
-        );
+                properties, store, aggregator, publisher, state,
+                new RelayMetrics(new SimpleMeterRegistry()));
 
         coordinator.runCommitCycle();
 
@@ -95,7 +89,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldResumeFromLastCommittedEpochPlusOne() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -107,7 +101,8 @@ class EpochCommitCoordinatorTest {
         };
 
         EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
-                properties, store, aggregator, publisher, state);
+                properties, store, aggregator, publisher, state,
+                new RelayMetrics(new SimpleMeterRegistry()));
 
         long now = Instant.now().getEpochSecond();
         long epochDuration = properties.epoch().durationSeconds();
@@ -131,7 +126,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldCommitMultipleSequentialEpochs() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -143,7 +138,8 @@ class EpochCommitCoordinatorTest {
         };
 
         EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
-                properties, store, aggregator, publisher, state);
+                properties, store, aggregator, publisher, state,
+                new RelayMetrics(new SimpleMeterRegistry()));
 
         long now = Instant.now().getEpochSecond();
         long epochDuration = properties.epoch().durationSeconds();
@@ -167,7 +163,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldBreakAndRecordFailureOnPublisherError() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -176,7 +172,8 @@ class EpochCommitCoordinatorTest {
         };
 
         EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
-                properties, store, aggregator, publisher, state);
+                properties, store, aggregator, publisher, state,
+                new RelayMetrics(new SimpleMeterRegistry()));
 
         long now = Instant.now().getEpochSecond();
         long epochDuration = properties.epoch().durationSeconds();
@@ -201,7 +198,7 @@ class EpochCommitCoordinatorTest {
     @Test
     void runCommitCycleShouldAlwaysUpdateHeartbeat() {
         RelayProperties properties = relayProperties();
-        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
         DefaultEpochAggregator aggregator = new DefaultEpochAggregator();
         CommitCycleState state = new CommitCycleState();
 
@@ -210,7 +207,8 @@ class EpochCommitCoordinatorTest {
                 Instant.now().getEpochSecond());
 
         EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
-                properties, store, aggregator, publisher, state);
+                properties, store, aggregator, publisher, state,
+                new RelayMetrics(new SimpleMeterRegistry()));
 
         assertEquals(0, state.lastWorkerHeartbeat());
         coordinator.runCommitCycle();
@@ -261,5 +259,99 @@ class EpochCommitCoordinatorTest {
         );
         RelayProperties.Security security = new RelayProperties.Security(true, false, eip712);
         return new RelayProperties(epoch, validation, security, null, null);
+    }
+
+    // ── Metrics wiring tests ──────────────────────────────────────────────────
+
+    @Test
+    void metricsShouldRecordCommitSuccessWithReadings() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        RelayProperties properties = relayProperties();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+
+        EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
+                properties, store, new DefaultEpochAggregator(),
+                aggregate -> new CommitPublication(aggregate.epochId(), "0xok", "(stub)",
+                        aggregate.totalReadings(), Instant.now().getEpochSecond()),
+                new CommitCycleState(), metrics);
+
+        long now = Instant.now().getEpochSecond();
+        long epoch = (now / 3600) - 1;
+        store.enqueue(reading("0xbbbb000000000000000000000000000000000001",
+                "0x0882830a1fffffff", epoch, 3600));
+
+        coordinator.runCommitCycle();
+
+        assertEquals(1.0, registry.counter("vayu.epoch.commits", "outcome", "success").count());
+        assertEquals(0.0, registry.counter("vayu.epoch.commits", "outcome", "failure").count());
+    }
+
+    @Test
+    void metricsShouldRecordEmptyCommitOutcome() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        RelayProperties properties = relayProperties();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+
+        EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
+                properties, store, new DefaultEpochAggregator(),
+                aggregate -> new CommitPublication(aggregate.epochId(), "0xunused", "(stub)",
+                        0, Instant.now().getEpochSecond()),
+                new CommitCycleState(), metrics);
+
+        coordinator.runCommitCycle();
+
+        assertTrue(registry.counter("vayu.epoch.commits", "outcome", "empty").count() >= 1.0);
+        assertEquals(0.0, registry.counter("vayu.epoch.commits", "outcome", "success").count());
+        assertEquals(0.0, registry.counter("vayu.epoch.commits", "outcome", "failure").count());
+    }
+
+    @Test
+    void metricsShouldRecordCommitFailureOnPublisherError() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        RelayProperties properties = relayProperties();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+
+        EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
+                properties, store, new DefaultEpochAggregator(),
+                aggregate -> { throw new RuntimeException("simulated publish error"); },
+                new CommitCycleState(), metrics);
+
+        long now = Instant.now().getEpochSecond();
+        long epoch = (now / 3600) - 1;
+        store.enqueue(reading("0xbbbb000000000000000000000000000000000002",
+                "0x0882830a1fffffff", epoch, 3600));
+
+        coordinator.runCommitCycle();
+
+        assertEquals(1.0, registry.counter("vayu.epoch.commits", "outcome", "failure").count());
+        assertEquals(0.0, registry.counter("vayu.epoch.commits", "outcome", "success").count());
+    }
+
+    @Test
+    void metricsShouldRecordReadingsDrainedCount() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        RelayProperties properties = relayProperties();
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+
+        EpochCommitCoordinator coordinator = new EpochCommitCoordinator(
+                properties, store, new DefaultEpochAggregator(),
+                aggregate -> new CommitPublication(aggregate.epochId(), "0xok", "(stub)",
+                        aggregate.totalReadings(), Instant.now().getEpochSecond()),
+                new CommitCycleState(), metrics);
+
+        long now = Instant.now().getEpochSecond();
+        long epoch = (now / 3600) - 1;
+        store.enqueue(reading("0xbbbb000000000000000000000000000000000003", "0x0882830a1fffffff", epoch, 3600));
+        store.enqueue(reading("0xbbbb000000000000000000000000000000000004", "0x0882830a2fffffff", epoch, 3600));
+        store.enqueue(reading("0xbbbb000000000000000000000000000000000005", "0x0882830a3fffffff", epoch, 3600));
+
+        coordinator.runCommitCycle();
+
+        assertEquals(1, registry.summary("vayu.epoch.readings_drained").count());
+        assertEquals(3.0, registry.summary("vayu.epoch.readings_drained").totalAmount());
     }
 }

@@ -1,6 +1,8 @@
 package protocol.vayu.relay.service.commit;
 
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -17,6 +19,12 @@ public class InMemoryEpochIngressWindow implements EpochIngressWindow {
             new ConcurrentHashMap<>();
 
     private final ConcurrentMap<Long, Set<String>> seenKeysByEpoch = new ConcurrentHashMap<>();
+
+    public InMemoryEpochIngressWindow(MeterRegistry registry) {
+        Gauge.builder("vayu.ingress.pending", this, InMemoryEpochIngressWindow::pendingReadings)
+                .description("Number of readings currently buffered across all open epoch windows")
+                .register(registry);
+    }
 
     /**
      * Atomically records {@code replayKey} for the reading's epoch and enqueues

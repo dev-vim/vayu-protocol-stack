@@ -4,9 +4,11 @@ import protocol.vayu.relay.api.dto.ReadingAcceptedResponse;
 import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
+import protocol.vayu.relay.service.RelayMetrics;
 import protocol.vayu.relay.service.commit.EpochIngressWindow;
 import protocol.vayu.relay.service.ingestion.security.ReporterStakeChecker;
 import protocol.vayu.relay.service.ingestion.security.SignatureVerifier;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,7 @@ public class ReadingIngestionService {
     private final SignatureVerifier signatureVerifier;
     private final ReporterStakeChecker reporterStakeChecker;
     private final EpochIngressWindow epochIngressWindow;
+    private final RelayMetrics relayMetrics;
     private final ConcurrentMap<String, Long> reporterLastReading = new ConcurrentHashMap<>();
 
     @Autowired
@@ -29,12 +32,14 @@ public class ReadingIngestionService {
             RelayProperties relayProperties,
             SignatureVerifier signatureVerifier,
             ReporterStakeChecker reporterStakeChecker,
-            EpochIngressWindow epochIngressWindow
+            EpochIngressWindow epochIngressWindow,
+            RelayMetrics relayMetrics
     ) {
         this.relayProperties = relayProperties;
         this.signatureVerifier = signatureVerifier;
         this.reporterStakeChecker = reporterStakeChecker;
         this.epochIngressWindow = epochIngressWindow;
+        this.relayMetrics = relayMetrics;
     }
 
     ReadingIngestionService(
@@ -62,28 +67,52 @@ public class ReadingIngestionService {
             public int pendingReadings() {
                 return 0;
             }
-        });
+        }, new RelayMetrics(new SimpleMeterRegistry()));
+    }
+
+    ReadingIngestionService(
+            RelayProperties relayProperties,
+            SignatureVerifier signatureVerifier,
+            ReporterStakeChecker reporterStakeChecker,
+            EpochIngressWindow epochIngressWindow
+    ) {
+        this(relayProperties, signatureVerifier, reporterStakeChecker, epochIngressWindow,
+                new RelayMetrics(new SimpleMeterRegistry()));
     }
 
     public ReadingAcceptedResponse ingest(ReadingSubmissionRequest request) {
         long now = Instant.now().getEpochSecond();
 
-        validateMandatoryFields(request);
-        validateTimestampFreshness(request.timestamp(), now);
-        validateEpochConsistency(request.epochId(), request.timestamp());
-        validateH3Resolution(request.h3Index());
-        validateSignature(request);
+        try { validateMandatoryFields(request); }
+        catch (RelayApiException e) { relayMetrics.recordRejectedValidation(); throw e; }
+
+        try { validateTimestampFreshness(request.timestamp(), now); }
+        catch (RelayApiException e) { relayMetrics.recordRejectedStaleTs(); throw e; }
+
+        try { validateEpochConsistency(request.epochId(), request.timestamp()); }
+        catch (RelayApiException e) { relayMetrics.recordRejectedWrongEpoch(); throw e; }
+
+        try { validateH3Resolution(request.h3Index()); }
+        catch (RelayApiException e) { relayMetrics.recordRejectedWrongRes(); throw e; }
+
+        try { validateSignature(request); }
+        catch (RelayApiException e) { relayMetrics.recordRejectedInvalidSig(); throw e; }
 
         String replayKey = request.reporter().toLowerCase()
                 + ":" + request.epochId()
                 + ":" + request.h3Index().toLowerCase();
         if (!epochIngressWindow.enqueueIfNotSeen(request, replayKey)) {
+            relayMetrics.recordRejectedDuplicate();
             throw RelayApiException.conflict("duplicate reading for this epoch and cell");
         }
 
-        enforceReporterRateLimit(request.reporter(), now);
-        validateReporterStake(request.reporter());
+        try { enforceReporterRateLimit(request.reporter(), now); }
+        catch (RelayApiException e) { relayMetrics.recordRejectedRateLimited(); throw e; }
 
+        try { validateReporterStake(request.reporter()); }
+        catch (RelayApiException e) { relayMetrics.recordRejectedNoStake(); throw e; }
+
+        relayMetrics.recordAccepted();
         return new ReadingAcceptedResponse("accepted", request.epochId(), now);
     }
 
