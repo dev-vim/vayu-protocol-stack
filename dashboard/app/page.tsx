@@ -1,6 +1,11 @@
+import dynamic from "next/dynamic";
 import { fetchGraphQL } from "@/lib/ponder";
-import { FIXTURE_DATA } from "@/lib/fixtures";
+import { FIXTURE_DATA, FIXTURE_CELLS } from "@/lib/fixtures";
 import type { DashboardData } from "@/lib/types";
+import EpochHexMapLoader from "./components/EpochHexMapLoader";
+
+const INDEXER_URL =
+  process.env.NEXT_PUBLIC_INDEXER_URL ?? "http://localhost:42069";
 
 export const revalidate = 60;
 
@@ -322,6 +327,16 @@ export default async function DashboardPage() {
               </table>
             </div>
           )}
+        </section>
+
+        {/* ── H3 cell map ──────────────────────────────────────────────────── */}
+        <section>
+          <SectionHeading>Cell Air-Quality Map</SectionHeading>
+          <EpochHexMapLoader
+            epochs={epochs}
+            indexerUrl={INDEXER_URL}
+            mockCellsByEpoch={MOCK ? FIXTURE_CELLS : undefined}
+          />
         </section>
 
         {/* ── Relays table ─────────────────────────────────────────────────── */}

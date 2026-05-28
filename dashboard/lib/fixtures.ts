@@ -1,4 +1,4 @@
-import type { DashboardData } from "./types";
+import type { CellData, DashboardData } from "./types";
 
 const RELAY_A = "0xA1b2C3d4E5f6A1b2C3d4E5f6A1b2C3d4E5f6A1b2";
 const RELAY_B = "0xB2c3D4e5F6a7B2c3D4e5F6a7B2c3D4e5F6a7B2c3";
@@ -55,4 +55,24 @@ export const FIXTURE_DATA: DashboardData = {
       { address: "0xC3d4E5f6A7b8C3d4E5f6A7b8C3d4E5f6A7b8C3d4", stake: vayu(25000), isActive: false, epochsCommitted: 91  },
     ],
   },
+};
+
+// ── Fixture cell data for the mock H3 map ────────────────────────────────────
+// Valid H3 resolution-8 cells clustered around San Francisco Bay Area.
+// AQI spread: Good → Very Unhealthy (for visual testing of the colour scale).
+export const FIXTURE_CELLS: Record<number, CellData[]> = {
+  494410: [
+    { h3Index: "882830828dfffff", medianAqi:  28, readingCount: 9, avgPm25:  8, avgPm10: 14, avgO3: 31, avgNo2: 12, avgSo2: 2, avgCo: 3 },
+    { h3Index: "8828308285fffff", medianAqi:  42, readingCount: 7, avgPm25: 12, avgPm10: 18, avgO3: 38, avgNo2: 18, avgSo2: 3, avgCo: 4 },
+    { h3Index: "88283082b3fffff", medianAqi:  65, readingCount: 5, avgPm25: 19, avgPm10: 27, avgO3: 52, avgNo2: 24, avgSo2: 5, avgCo: 6 },
+    { h3Index: "88283082bdfffff", medianAqi:  78, readingCount: 6, avgPm25: 23, avgPm10: 32, avgO3: 58, avgNo2: 31, avgSo2: 7, avgCo: 8 },
+    { h3Index: "882830829bfffff", medianAqi:  95, readingCount: 8, avgPm25: 28, avgPm10: 39, avgO3: 67, avgNo2: 38, avgSo2: 9, avgCo: 10 },
+    { h3Index: "8828308283fffff", medianAqi: 115, readingCount: 4, avgPm25: 34, avgPm10: 46, avgO3: 75, avgNo2: 45, avgSo2: 11, avgCo: 12 },
+    { h3Index: "88283082a7fffff", medianAqi: 132, readingCount: 6, avgPm25: 40, avgPm10: 55, avgO3: 82, avgNo2: 52, avgSo2: 14, avgCo: 15 },
+    { h3Index: "882830821bfffff", medianAqi: 156, readingCount: 5, avgPm25: 48, avgPm10: 64, avgO3: 90, avgNo2: 60, avgSo2: 17, avgCo: 18 },
+    { h3Index: "882830820bfffff", medianAqi: 178, readingCount: 7, avgPm25: 55, avgPm10: 74, avgO3: 97, avgNo2: 68, avgSo2: 20, avgCo: 22 },
+    { h3Index: "88283082c1fffff", medianAqi: 205, readingCount: 3, avgPm25: 63, avgPm10: 84, avgO3: 105, avgNo2: 76, avgSo2: 24, avgCo: 27 },
+    { h3Index: "88283082c3fffff", medianAqi: 237, readingCount: 4, avgPm25: 72, avgPm10: 96, avgO3: 113, avgNo2: 85, avgSo2: 28, avgCo: 31 },
+    { h3Index: "88283082c5fffff", medianAqi: 262, readingCount: 3, avgPm25: 82, avgPm10: 108, avgO3: 121, avgNo2: 93, avgSo2: 33, avgCo: 37 },
+  ],
 };
