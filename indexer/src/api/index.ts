@@ -82,4 +82,104 @@ app.get("/epochs/:epochId/cells", async (c) => {
   });
 });
 
+// ── Per-epoch raw readings ─────────────────────────────────────────────────
+// Returns all readings ingested from the epoch IPFS blob.
+app.get("/epochs/:epochId/readings", async (c) => {
+  const raw = c.req.param("epochId");
+  const epochId = parseInt(raw, 10);
+  if (isNaN(epochId) || epochId < 0) {
+    return c.json({ error: "epochId must be a non-negative integer" }, 400);
+  }
+
+  const sql = getRawSql();
+
+  type ReadingRow = {
+    reporter: string;
+    h3_index: string;
+    timestamp: number;
+    aqi: number;
+    pm25: number;
+    pm10: number;
+    o3: number;
+    no2: number;
+    so2: number;
+    co: number;
+  };
+
+  const rows = await sql<ReadingRow[]>`
+    SELECT reporter, h3_index, timestamp, aqi, pm25, pm10, o3, no2, so2, co
+    FROM   readings
+    WHERE  epoch_id = ${epochId}
+    ORDER BY reporter, h3_index
+  `;
+
+  return c.json({
+    epochId,
+    readings: rows.map((r) => ({
+      reporter:  r.reporter,
+      h3Index:   r.h3_index.replace(/^0x/, ""),
+      timestamp: r.timestamp,
+      aqi:       r.aqi,
+      pm25:      r.pm25,
+      pm10:      r.pm10,
+      o3:        r.o3,
+      no2:       r.no2,
+      so2:       r.so2,
+      co:        r.co,
+    })),
+  });
+});
+
+// ── Per-reporter raw readings ──────────────────────────────────────────────
+// Returns all readings submitted by a reporter across all indexed epochs.
+// Optional query param: limit (default 100, max 500).
+app.get("/reporters/:address/readings", async (c) => {
+  const raw = c.req.param("address").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(raw)) {
+    return c.json({ error: "address must be a 0x-prefixed 20-byte hex string" }, 400);
+  }
+
+  const limitParam = c.req.query("limit");
+  const limit = Math.min(parseInt(limitParam ?? "100", 10) || 100, 500);
+
+  const sql = getRawSql();
+
+  type ReadingRow = {
+    epoch_id: number;
+    h3_index: string;
+    timestamp: number;
+    aqi: number;
+    pm25: number;
+    pm10: number;
+    o3: number;
+    no2: number;
+    so2: number;
+    co: number;
+  };
+
+  const rows = await sql<ReadingRow[]>`
+    SELECT epoch_id, h3_index, timestamp, aqi, pm25, pm10, o3, no2, so2, co
+    FROM   readings
+    WHERE  LOWER(reporter) = ${raw}
+    ORDER BY epoch_id DESC, h3_index
+    LIMIT  ${limit}
+  `;
+
+  return c.json({
+    address: raw,
+    readings: rows.map((r) => ({
+      epochId:   r.epoch_id,
+      h3Index:   r.h3_index.replace(/^0x/, ""),
+      timestamp: r.timestamp,
+      aqi:       r.aqi,
+      pm25:      r.pm25,
+      pm10:      r.pm10,
+      o3:        r.o3,
+      no2:       r.no2,
+      so2:       r.so2,
+      co:        r.co,
+    })),
+  });
+});
+
 export default app;

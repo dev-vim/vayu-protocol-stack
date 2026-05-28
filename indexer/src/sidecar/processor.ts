@@ -102,17 +102,55 @@ async function insertReadings(epochId: number, blob: EpochBlob): Promise<void> {
 }
 
 async function markIngested(epochId: number, blob: EpochBlob): Promise<void> {
-  // Sum all reward amounts from the blob
   const totalReward = blob.rewards
     .reduce((acc, r) => acc + BigInt(r.amount), 0n)
     .toString();
 
-  await sql`
-    UPDATE epochs
-    SET    ipfs_status  = 'INGESTED',
-           total_reward = ${totalReward}
-    WHERE  epoch_id = ${epochId}
-  `;
+  // Aggregate per-reporter reading counts and reward amounts from the blob.
+  const readingsByReporter = new Map<string, number>();
+  for (const r of blob.readings) {
+    const addr = r.reporter.toLowerCase();
+    readingsByReporter.set(addr, (readingsByReporter.get(addr) ?? 0) + 1);
+  }
+
+  const rewardsByReporter = new Map<string, bigint>();
+  for (const r of blob.rewards) {
+    const addr = r.reporter.toLowerCase();
+    rewardsByReporter.set(addr, (rewardsByReporter.get(addr) ?? 0n) + BigInt(r.amount));
+  }
+
+  const allReporters = [
+    ...new Set([...readingsByReporter.keys(), ...rewardsByReporter.keys()]),
+  ];
+
+  // Wrap in a transaction so that the epoch status flip and reporter aggregate
+  // updates are atomic. The ipfs_status guard makes this call idempotent — if
+  // the epoch was already ingested the UPDATE matches zero rows and we skip
+  // the reporter updates, preventing double-counting on retries.
+  await sql.begin(async (tx) => {
+    const result = await tx`
+      UPDATE epochs
+      SET    ipfs_status  = 'INGESTED',
+             total_reward = ${totalReward}
+      WHERE  epoch_id     = ${epochId}
+        AND  ipfs_status != 'INGESTED'
+    `;
+
+    if (result.count === 0) return;
+
+    for (const addr of allReporters) {
+      const readingCount = readingsByReporter.get(addr) ?? 0;
+      // total_rewards is stored as TEXT by Ponder (BigInt → text); cast through
+      // NUMERIC for arithmetic then back to TEXT.
+      const rewardAmount = (rewardsByReporter.get(addr) ?? 0n).toString();
+      await tx`
+        UPDATE reporters
+        SET total_readings = total_readings + ${readingCount},
+            total_rewards  = (total_rewards::NUMERIC + ${rewardAmount}::NUMERIC)::TEXT
+        WHERE LOWER(address) = ${addr}
+      `;
+    }
+  });
 }
 
 async function markFailed(epochId: number): Promise<void> {
