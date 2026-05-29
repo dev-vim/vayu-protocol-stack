@@ -109,10 +109,8 @@ docker run -d -p 5001:5001 --name ipfs-kubo ipfs/kubo:latest
 
 ```bash
 cp .env.local.example .env.local
-# .env.local overrides three production defaults for fast local cycling:
-#   RELAY_EPOCH_DURATION_SECONDS=60            (1-minute epochs instead of 1 hour)
-#   RELAY_EPOCH_COMMIT_CHECK_INTERVAL_MS=5000  (commit worker polls every 5 s)
-#   RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS=30  (30 s window → 2 submissions per epoch)
+# .env.local enables DEBUG logging and sets short epochs for fast local cycling.
+# The on-chain commit block is commented out — this is Mode A (log-only).
 source .env.local && mvn spring-boot:run
 ```
 
@@ -183,14 +181,12 @@ docker run -d -p 5001:5001 --name ipfs-kubo ipfs/kubo:latest
 
 ### 2. Configure and start the relay
 
-Add the on-chain vars to `.env.local` (in addition to the base defaults from `.env.local.example`):
-
 ```bash
 cd ../relay
 cp .env.local.example .env.local
 ```
 
-Append to `.env.local`:
+Uncomment the on-chain commit block in `.env.local` and fill in the settlement address:
 
 ```bash
 # On-chain commit — Anvil
