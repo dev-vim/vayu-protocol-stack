@@ -6,6 +6,7 @@ import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
 import protocol.vayu.relay.service.RelayMetrics;
 import protocol.vayu.relay.service.commit.EpochIngressWindow;
+import protocol.vayu.relay.service.commit.aggregation.StakeQueryException;
 import protocol.vayu.relay.service.ingestion.security.ReporterStakeChecker;
 import protocol.vayu.relay.service.ingestion.security.SignatureVerifier;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -103,6 +104,9 @@ public class ReadingIngestionService {
         try { validateSignature(request); }
         catch (RelayApiException e) { relayMetrics.recordRejectedInvalidSig(); throw e; }
 
+        try { validateReporterStake(request.reporter()); }
+        catch (RelayApiException e) { relayMetrics.recordRejectedNoStake(); throw e; }
+
         String replayKey = request.reporter().toLowerCase()
                 + ":" + request.epochId()
                 + ":" + request.h3Index().toLowerCase();
@@ -115,13 +119,6 @@ public class ReadingIngestionService {
         catch (RelayApiException e) {
             epochIngressWindow.releaseReplayKey(request.epochId(), replayKey);
             relayMetrics.recordRejectedRateLimited();
-            throw e;
-        }
-
-        try { validateReporterStake(request.reporter()); }
-        catch (RelayApiException e) {
-            epochIngressWindow.releaseReplayKey(request.epochId(), replayKey);
-            relayMetrics.recordRejectedNoStake();
             throw e;
         }
 
@@ -145,8 +142,16 @@ public class ReadingIngestionService {
             return;
         }
 
-        if (!reporterStakeChecker.hasActiveStake(reporter)) {
-            throw RelayApiException.unauthorized("reporter has no active stake");
+        try {
+            if (!reporterStakeChecker.hasActiveStake(reporter)) {
+                throw RelayApiException.unauthorized("reporter has no active stake");
+            }
+        } catch (RelayApiException e) {
+            throw e;
+        } catch (StakeQueryException e) {
+            // Only reachable in fail-closed mode (CachedStakeWeightProvider re-throws when failOpen=false
+            // and no cache entry is available). Return 503 so the reporter can retry.
+            throw RelayApiException.serviceUnavailable("stake check temporarily unavailable");
         }
     }
 
