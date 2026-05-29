@@ -1,4 +1,4 @@
-import type { CellData, DashboardData } from "./types";
+import type { CellData, DashboardData, EpochReadingRow, ReporterReadingRow } from "./types";
 
 const RELAY_A = "0xA1b2C3d4E5f6A1b2C3d4E5f6A1b2C3d4E5f6A1b2";
 const RELAY_B = "0xB2c3D4e5F6a7B2c3D4e5F6a7B2c3D4e5F6a7B2c3";
@@ -55,24 +55,125 @@ export const FIXTURE_DATA: DashboardData = {
       { address: "0xC3d4E5f6A7b8C3d4E5f6A7b8C3d4E5f6A7b8C3d4", stake: vayu(25000), isActive: false, epochsCommitted: 91  },
     ],
   },
+  challengess: {
+    items: [
+      { epochId: 494401, challenger: "0x5555555555555555555555555555555555555555", challengeType: "REWARD_COMPUTATION", succeeded: true,  txHash: "0xaabbcc1100000000000000000000000000000000000000000000000000000000" },
+      { epochId: 494398, challenger: "0x6666666666666666666666666666666666666666", challengeType: "SPATIAL_ANOMALY",    succeeded: false, txHash: "0xaabbcc2200000000000000000000000000000000000000000000000000000000" },
+      { epochId: 494405, challenger: "0x7777777777777777777777777777777777777777", challengeType: "DATA_INTEGRITY",      succeeded: null,  txHash: "0xaabbcc3300000000000000000000000000000000000000000000000000000000" },
+    ],
+  },
+  slashess: {
+    items: [
+      { epochId: 494401, challengeType: "REWARD_COMPUTATION", offender: "0x9999999999999999999999999999999999999999", slashAmount: vayu(500), fishermanReward: vayu(50), txHash: "0xaabbcc1100000000000000000000000000000000000000000000000000000000" },
+    ],
+  },
 };
 
 // ── Fixture cell data for the mock H3 map ────────────────────────────────────
-// Valid H3 resolution-8 cells clustered around San Francisco Bay Area.
-// AQI spread: Good → Very Unhealthy (for visual testing of the colour scale).
+// Valid H3 resolution-8 cells covering key Bengaluru, India corridors.
+//
+// AQI gradient reflects real conditions (CPCB data, typical annual averages):
+//   Lalbagh / Cubbon Park / Bannerghatta  →  Good      (parks, forests)
+//   Yelahanka / JP Nagar / Electronic City →  Moderate  (outer suburbs, IT)
+//   Whitefield / Koramangala / HSR         →  USG       (IT+residential mix)
+//   Silk Board / Marathahalli / Domlur     →  Unhealthy (traffic bottlenecks)
+//   Hebbal / Majestic / Rajajinagar        →  Unhealthy (highway junctions)
+//   Peenya / Tumkur Rd industrial belt     →  Very Unhealthy (foundries, factories)
 export const FIXTURE_CELLS: Record<number, CellData[]> = {
   494410: [
-    { h3Index: "882830828dfffff", medianAqi:  28, readingCount: 9, avgPm25:  8, avgPm10: 14, avgO3: 31, avgNo2: 12, avgSo2: 2, avgCo: 3 },
-    { h3Index: "8828308285fffff", medianAqi:  42, readingCount: 7, avgPm25: 12, avgPm10: 18, avgO3: 38, avgNo2: 18, avgSo2: 3, avgCo: 4 },
-    { h3Index: "88283082b3fffff", medianAqi:  65, readingCount: 5, avgPm25: 19, avgPm10: 27, avgO3: 52, avgNo2: 24, avgSo2: 5, avgCo: 6 },
-    { h3Index: "88283082bdfffff", medianAqi:  78, readingCount: 6, avgPm25: 23, avgPm10: 32, avgO3: 58, avgNo2: 31, avgSo2: 7, avgCo: 8 },
-    { h3Index: "882830829bfffff", medianAqi:  95, readingCount: 8, avgPm25: 28, avgPm10: 39, avgO3: 67, avgNo2: 38, avgSo2: 9, avgCo: 10 },
-    { h3Index: "8828308283fffff", medianAqi: 115, readingCount: 4, avgPm25: 34, avgPm10: 46, avgO3: 75, avgNo2: 45, avgSo2: 11, avgCo: 12 },
-    { h3Index: "88283082a7fffff", medianAqi: 132, readingCount: 6, avgPm25: 40, avgPm10: 55, avgO3: 82, avgNo2: 52, avgSo2: 14, avgCo: 15 },
-    { h3Index: "882830821bfffff", medianAqi: 156, readingCount: 5, avgPm25: 48, avgPm10: 64, avgO3: 90, avgNo2: 60, avgSo2: 17, avgCo: 18 },
-    { h3Index: "882830820bfffff", medianAqi: 178, readingCount: 7, avgPm25: 55, avgPm10: 74, avgO3: 97, avgNo2: 68, avgSo2: 20, avgCo: 22 },
-    { h3Index: "88283082c1fffff", medianAqi: 205, readingCount: 3, avgPm25: 63, avgPm10: 84, avgO3: 105, avgNo2: 76, avgSo2: 24, avgCo: 27 },
-    { h3Index: "88283082c3fffff", medianAqi: 237, readingCount: 4, avgPm25: 72, avgPm10: 96, avgO3: 113, avgNo2: 85, avgSo2: 28, avgCo: 31 },
-    { h3Index: "88283082c5fffff", medianAqi: 262, readingCount: 3, avgPm25: 82, avgPm10: 108, avgO3: 121, avgNo2: 93, avgSo2: 33, avgCo: 37 },
+    // ── Green / low-pollution zones ──────────────────────────────────────────
+    // Lalbagh Botanical Garden — large green cover, Good AQI
+    { h3Index: "88618925bbfffff", medianAqi:  38, readingCount:  6, avgPm25:  9, avgPm10:  22, avgO3: 31, avgNo2:  15, avgSo2:  4, avgCo:  3 },
+    // Cubbon Park — central urban forest, Good AQI
+    { h3Index: "8860145b41fffff", medianAqi:  44, readingCount:  5, avgPm25: 12, avgPm10:  28, avgO3: 36, avgNo2:  19, avgSo2:  5, avgCo:  3 },
+    // Bannerghatta — semi-rural / national park fringe, Good AQI
+    { h3Index: "88618926a3fffff", medianAqi:  48, readingCount:  4, avgPm25: 13, avgPm10:  31, avgO3: 33, avgNo2:  14, avgSo2:  4, avgCo:  2 },
+    // ── Outer suburbs / IT parks ─────────────────────────────────────────────
+    // Yelahanka — northern suburb, low density, Moderate AQI
+    { h3Index: "886016966bfffff", medianAqi:  58, readingCount:  7, avgPm25: 16, avgPm10:  42, avgO3: 38, avgNo2:  22, avgSo2:  6, avgCo:  4 },
+    // JP Nagar — planned residential south, Moderate AQI
+    { h3Index: "88618924abfffff", medianAqi:  72, readingCount:  8, avgPm25: 20, avgPm10:  52, avgO3: 44, avgNo2:  28, avgSo2:  7, avgCo:  5 },
+    // Electronic City — IT SEZ, relatively contained traffic, Moderate AQI
+    { h3Index: "886189266bfffff", medianAqi:  82, readingCount: 11, avgPm25: 24, avgPm10:  61, avgO3: 50, avgNo2:  32, avgSo2:  8, avgCo:  6 },
+    // ── Residential / mixed-use ───────────────────────────────────────────────
+    // Jayanagar — mature residential, tree-lined streets, Moderate AQI
+    { h3Index: "8861892591fffff", medianAqi:  88, readingCount:  9, avgPm25: 26, avgPm10:  68, avgO3: 54, avgNo2:  36, avgSo2:  9, avgCo:  6 },
+    // Koramangala — high-density urban mixed-use, Moderate–USG
+    { h3Index: "88618925c5fffff", medianAqi:  96, readingCount: 13, avgPm25: 29, avgPm10:  74, avgO3: 58, avgNo2:  42, avgSo2: 10, avgCo:  7 },
+    // HSR Layout — planned residential with commercial spine, USG
+    { h3Index: "886189242dfffff", medianAqi: 103, readingCount: 10, avgPm25: 32, avgPm10:  81, avgO3: 61, avgNo2:  47, avgSo2: 11, avgCo:  8 },
+    // Sarjapur Road — IT corridor with growing traffic, USG
+    { h3Index: "8861892739fffff", medianAqi: 112, readingCount: 12, avgPm25: 35, avgPm10:  89, avgO3: 65, avgNo2:  53, avgSo2: 12, avgCo:  8 },
+    // Whitefield — outer-ring IT hub, bus traffic heavy, USG
+    { h3Index: "88618921ddfffff", medianAqi: 118, readingCount: 14, avgPm25: 37, avgPm10:  96, avgO3: 68, avgNo2:  58, avgSo2: 13, avgCo:  9 },
+    // ── Traffic bottlenecks ───────────────────────────────────────────────────
+    // Domlur — arterial connector, perpetual congestion, USG–Unhealthy
+    { h3Index: "8861892537fffff", medianAqi: 126, readingCount:  9, avgPm25: 40, avgPm10: 104, avgO3: 71, avgNo2:  64, avgSo2: 14, avgCo: 10 },
+    // Tin Factory — east Bengaluru junction, BMTC depot nearby, Unhealthy
+    { h3Index: "8861892eedfffff", medianAqi: 135, readingCount:  8, avgPm25: 44, avgPm10: 112, avgO3: 74, avgNo2:  70, avgSo2: 16, avgCo: 11 },
+    // Marathahalli Bridge — ORR bottleneck, peak-hour gridlock, Unhealthy
+    { h3Index: "88618920b1fffff", medianAqi: 148, readingCount: 10, avgPm25: 49, avgPm10: 128, avgO3: 78, avgNo2:  79, avgSo2: 18, avgCo: 12 },
+    // Silk Board Junction — worst traffic junction in India surveys, Unhealthy
+    { h3Index: "88618925c9fffff", medianAqi: 158, readingCount:  7, avgPm25: 52, avgPm10: 138, avgO3: 82, avgNo2:  86, avgSo2: 20, avgCo: 13 },
+    // Majestic / KR Market — dense commercial core, diesel buses, Unhealthy
+    { h3Index: "8860145b55fffff", medianAqi: 163, readingCount:  8, avgPm25: 55, avgPm10: 145, avgO3: 85, avgNo2:  91, avgSo2: 22, avgCo: 14 },
+    // Rajajinagar — near industrial belt, high vehicle load, Unhealthy
+    { h3Index: "8860145b3bfffff", medianAqi: 172, readingCount:  6, avgPm25: 59, avgPm10: 155, avgO3: 88, avgNo2:  97, avgSo2: 26, avgCo: 15 },
+    // Hebbal Flyover — NH44 interchange, trucks and commuters, Very Unhealthy
+    { h3Index: "8861892c83fffff", medianAqi: 185, readingCount:  7, avgPm25: 64, avgPm10: 168, avgO3: 91, avgNo2: 105, avgSo2: 29, avgCo: 16 },
+    // ── Industrial belt (Peenya / Tumkur Road) ────────────────────────────────
+    // Tumkur Road Industrial — garment / chemical units, Very Unhealthy
+    { h3Index: "88601459ebfffff", medianAqi: 198, readingCount:  5, avgPm25: 68, avgPm10: 182, avgO3: 94, avgNo2: 112, avgSo2: 34, avgCo: 18 },
+    // Peenya Industrial Area — foundries, machine tools, electroplating, Very Unhealthy
+    { h3Index: "886014591bfffff", medianAqi: 236, readingCount:  4, avgPm25: 82, avgPm10: 210, avgO3: 98, avgNo2: 128, avgSo2: 45, avgCo: 22 },
+  ],
+};
+
+// ── Fixture readings per epoch ────────────────────────────────────────────────
+// Individual sensor readings for epoch 494410, spread across Bengaluru zones.
+export const FIXTURE_EPOCH_READINGS: Record<number, EpochReadingRow[]> = {
+  494410: [
+    // Green zones — reporters near parks
+    { reporter: "0x1111111111111111111111111111111111111111", h3Index: "88618925bbfffff", timestamp: epochStart(0) +  0, aqi:  38, pm25:  9, pm10:  22, o3: 31, no2: 15, so2:  4, co:  3 },
+    { reporter: "0x3333333333333333333333333333333333333333", h3Index: "8860145b41fffff", timestamp: epochStart(0) +  8, aqi:  44, pm25: 12, pm10:  28, o3: 36, no2: 19, so2:  5, co:  3 },
+    { reporter: "0x2222222222222222222222222222222222222222", h3Index: "88618926a3fffff", timestamp: epochStart(0) + 14, aqi:  48, pm25: 13, pm10:  31, o3: 33, no2: 14, so2:  4, co:  2 },
+    // Residential / IT corridor reporters
+    { reporter: "0x1111111111111111111111111111111111111111", h3Index: "886016966bfffff", timestamp: epochStart(0) + 22, aqi:  58, pm25: 16, pm10:  42, o3: 38, no2: 22, so2:  6, co:  4 },
+    { reporter: "0x4444444444444444444444444444444444444444", h3Index: "886189266bfffff", timestamp: epochStart(0) + 31, aqi:  82, pm25: 24, pm10:  61, o3: 50, no2: 32, so2:  8, co:  6 },
+    { reporter: "0x2222222222222222222222222222222222222222", h3Index: "88618921ddfffff", timestamp: epochStart(0) + 40, aqi: 118, pm25: 37, pm10:  96, o3: 68, no2: 58, so2: 13, co:  9 },
+    { reporter: "0x5555555555555555555555555555555555555555", h3Index: "8861892739fffff", timestamp: epochStart(0) + 47, aqi: 112, pm25: 35, pm10:  89, o3: 65, no2: 53, so2: 12, co:  8 },
+    // Traffic corridors
+    { reporter: "0x3333333333333333333333333333333333333333", h3Index: "88618920b1fffff", timestamp: epochStart(0) + 55, aqi: 148, pm25: 49, pm10: 128, o3: 78, no2: 79, so2: 18, co: 12 },
+    { reporter: "0x1111111111111111111111111111111111111111", h3Index: "88618925c9fffff", timestamp: epochStart(0) + 63, aqi: 158, pm25: 52, pm10: 138, o3: 82, no2: 86, so2: 20, co: 13 },
+    { reporter: "0x6666666666666666666666666666666666666666", h3Index: "8861892c83fffff", timestamp: epochStart(0) + 70, aqi: 185, pm25: 64, pm10: 168, o3: 91, no2: 105, so2: 29, co: 16 },
+    // Industrial belt
+    { reporter: "0x7777777777777777777777777777777777777777", h3Index: "88601459ebfffff", timestamp: epochStart(0) + 78, aqi: 198, pm25: 68, pm10: 182, o3: 94, no2: 112, so2: 34, co: 18 },
+    { reporter: "0x2222222222222222222222222222222222222222", h3Index: "886014591bfffff", timestamp: epochStart(0) + 85, aqi: 236, pm25: 82, pm10: 210, o3: 98, no2: 128, so2: 45, co: 22 },
+  ],
+};
+
+// ── Fixture readings per reporter ─────────────────────────────────────────────
+// Multi-epoch reading history for the top two reporters across Bengaluru zones.
+export const FIXTURE_REPORTER_READINGS: Record<string, ReporterReadingRow[]> = {
+  // Reporter 0x1111 — roams widely: parks, residential, and traffic corridors
+  "0x1111111111111111111111111111111111111111": [
+    { epochId: 494410, h3Index: "88618925bbfffff", timestamp: epochStart(0) +  0, aqi:  38, pm25:  9, pm10:  22, o3: 31, no2: 15, so2:  4, co:  3 },
+    { epochId: 494410, h3Index: "886016966bfffff", timestamp: epochStart(0) + 22, aqi:  58, pm25: 16, pm10:  42, o3: 38, no2: 22, so2:  6, co:  4 },
+    { epochId: 494410, h3Index: "88618925c9fffff", timestamp: epochStart(0) + 63, aqi: 158, pm25: 52, pm10: 138, o3: 82, no2: 86, so2: 20, co: 13 },
+    { epochId: 494409, h3Index: "88618925bbfffff", timestamp: epochStart(1) +  0, aqi:  41, pm25: 10, pm10:  24, o3: 32, no2: 16, so2:  4, co:  3 },
+    { epochId: 494409, h3Index: "8861892591fffff", timestamp: epochStart(1) + 30, aqi:  92, pm25: 27, pm10:  71, o3: 56, no2: 38, so2:  9, co:  7 },
+    { epochId: 494408, h3Index: "88618920b1fffff", timestamp: epochStart(2) + 10, aqi: 153, pm25: 51, pm10: 133, o3: 80, no2: 82, so2: 19, co: 12 },
+    { epochId: 494407, h3Index: "886016966bfffff", timestamp: epochStart(3) +  5, aqi:  61, pm25: 17, pm10:  44, o3: 39, no2: 23, so2:  6, co:  4 },
+    { epochId: 494406, h3Index: "88618925bbfffff", timestamp: epochStart(4) +  0, aqi:  35, pm25:  8, pm10:  20, o3: 29, no2: 13, so2:  3, co:  3 },
+  ],
+  // Reporter 0x2222 — focuses on IT corridor and industrial belt monitoring
+  "0x2222222222222222222222222222222222222222": [
+    { epochId: 494410, h3Index: "886189266bfffff", timestamp: epochStart(0) + 31, aqi:  82, pm25: 24, pm10:  61, o3: 50, no2: 32, so2:  8, co:  6 },
+    { epochId: 494410, h3Index: "88618921ddfffff", timestamp: epochStart(0) + 40, aqi: 118, pm25: 37, pm10:  96, o3: 68, no2: 58, so2: 13, co:  9 },
+    { epochId: 494410, h3Index: "886014591bfffff", timestamp: epochStart(0) + 85, aqi: 236, pm25: 82, pm10: 210, o3: 98, no2: 128, so2: 45, co: 22 },
+    { epochId: 494409, h3Index: "886189266bfffff", timestamp: epochStart(1) + 31, aqi:  79, pm25: 23, pm10:  58, o3: 49, no2: 30, so2:  7, co:  6 },
+    { epochId: 494409, h3Index: "88601459ebfffff", timestamp: epochStart(1) + 70, aqi: 204, pm25: 70, pm10: 188, o3: 96, no2: 116, so2: 36, co: 19 },
+    { epochId: 494408, h3Index: "88618921ddfffff", timestamp: epochStart(2) + 40, aqi: 122, pm25: 38, pm10:  99, o3: 69, no2: 60, so2: 13, co:  9 },
+    { epochId: 494407, h3Index: "886189266bfffff", timestamp: epochStart(3) + 31, aqi:  85, pm25: 25, pm10:  63, o3: 51, no2: 33, so2:  8, co:  6 },
   ],
 };

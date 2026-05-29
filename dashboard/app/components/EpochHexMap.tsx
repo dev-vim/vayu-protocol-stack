@@ -36,10 +36,10 @@ const MAP_STYLE = {
   ],
 };
 
-// ── Initial view: SF Bay Area (where fixture cells live) ─────────────────────
+// ── Initial view: Bengaluru, India (where fixture cells live) ───────────────
 const INITIAL_VIEW_STATE = {
-  longitude: -122.42,
-  latitude: 37.76,
+  longitude: 77.59,
+  latitude:  12.97,
   zoom: 11,
   pitch: 0,
   bearing: 0,
@@ -110,13 +110,33 @@ function aggregateCells(cells: CellData[], targetRes: number, nativeRes: number)
 }
 
 // ── AQI colour scale (US EPA breakpoints) ────────────────────────────────────
-function aqiColor(aqi: number): [number, number, number, number] {
-  if (aqi <= 50)  return [0,   228,   0, 110];   // Good
-  if (aqi <= 100) return [255, 255,   0, 110];   // Moderate
-  if (aqi <= 150) return [255, 126,   0, 110];   // Unhealthy for sensitive groups
-  if (aqi <= 200) return [255,   0,   0, 110];   // Unhealthy
-  if (aqi <= 300) return [143,  63, 151, 110];   // Very unhealthy
-  return                 [126,   0,  35, 110];   // Hazardous
+// Tune HEX_ALPHA (0–255) to adjust peak fill intensity at the hex centre:
+//   ~60  → light / mostly transparent
+//   ~110 → balanced (default)
+//   ~180 → vivid / opaque
+const HEX_ALPHA = 50;
+
+// ── Radial gradient controls ──────────────────────────────────────────────────
+// RADIAL_STEPS: concentric coverage rings composited per cell.
+//   1  → flat fill (gradient disabled)
+//   3  → subtle halo
+//   5  → smooth gradient (default)
+//   8+ → very smooth, more draw calls
+// RADIAL_FALLOFF: alpha distribution curve (exponent applied to the 0→1 ramp).
+//   0.5 → shallow / wide glow
+//   1.0 → linear
+//   1.5 → moderate centre spike (default)
+//   2.5 → sharp centre spike
+const RADIAL_STEPS   = 4;
+const RADIAL_FALLOFF = 2.0;
+
+function aqiColor(aqi: number, alpha = HEX_ALPHA): [number, number, number, number] {
+  if (aqi <= 50)  return [0,   228,   0, alpha];   // Good
+  if (aqi <= 100) return [255, 255,   0, alpha];   // Moderate
+  if (aqi <= 150) return [255, 126,   0, alpha];   // Unhealthy for sensitive groups
+  if (aqi <= 200) return [255,   0,   0, alpha];   // Unhealthy
+  if (aqi <= 300) return [143,  63, 151, alpha];   // Very unhealthy
+  return                 [126,   0,  35, alpha];   // Hazardous
 }
 
 // ── Tooltip renderer ─────────────────────────────────────────────────────────
@@ -239,23 +259,32 @@ export default function EpochHexMap({
     if (selectedEpochId !== null) loadCells(selectedEpochId);
   }, [selectedEpochId, loadCells]);
 
-  const layers = [
-    new H3HexagonLayer<CellData>({
-      id: "cell-aqi",
-      data: displayCells,
+  // Build RADIAL_STEPS concentric layers. i=0 is outermost (coverage=1, low alpha);
+  // i=RADIAL_STEPS-1 is innermost (smallest coverage, full HEX_ALPHA). Only the
+  // outermost layer is pickable/stroked so tooltips fire anywhere on the hexagon.
+  const layers = Array.from({ length: RADIAL_STEPS }, (_, i) => {
+    const t        = (i + 1) / RADIAL_STEPS;          // 0 < t ≤ 1, increases toward centre
+    const coverage = 1 - i / RADIAL_STEPS;            // 1.0 → 1/RADIAL_STEPS
+    const alpha    = Math.round(HEX_ALPHA * Math.pow(t, RADIAL_FALLOFF));
+    const isOuter  = i === 0;
+
+    return new H3HexagonLayer<CellData>({
+      id:            `cell-aqi-${i}`,
+      data:          displayCells,
       getHexagon:    (d) => d.h3Index,
-      getFillColor:  (d) => aqiColor(d.medianAqi),
+      getFillColor:  (d) => aqiColor(d.medianAqi, alpha),
+      coverage,
       extruded:      false,
-      stroked:       true,
+      stroked:       isOuter,
       getLineColor:  [255, 255, 255, 20],
       lineWidthMinPixels: 1,
-      pickable:      true,
-      autoHighlight: true,
-      highlightColor: [255, 255, 255, 60],
+      pickable:      isOuter,
+      autoHighlight: isOuter,
+      highlightColor: [255, 255, 255, 40],
       transitions:   { getFillColor: 300 },
       updateTriggers: { getFillColor: displayCells.length, data: targetRes },
-    }),
-  ];
+    });
+  });
 
   return (
     <div className="rounded-xl border border-zinc-800 overflow-hidden">
