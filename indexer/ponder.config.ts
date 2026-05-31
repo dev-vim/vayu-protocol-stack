@@ -61,26 +61,27 @@ const activeChain = (process.env.PONDER_CHAIN ?? "anvil") as
   | "baseSepolia"
   | "base";
 
+// Only register the active chain so Ponder does not attempt to connect to
+// chains that are not running in the current environment.
+const chainDefs = {
+  anvil: {
+    id: 31337,
+    rpc: http(process.env.PONDER_RPC_URL_31337 ?? "http://localhost:8545"),
+  },
+  baseSepolia: {
+    id: 84532,
+    rpc: http(process.env.PONDER_RPC_URL_84532),
+  },
+  base: {
+    id: 8453,
+    rpc: http(process.env.PONDER_RPC_URL_8453),
+  },
+} as const;
+
 export default createConfig({
   port,
   chains: {
-    // ── Local Anvil ─────────────────────────────────────────────────────────
-    anvil: {
-      id: 31337,
-      rpc: http(process.env.PONDER_RPC_URL_31337 ?? "http://localhost:8545"),
-    },
-
-    // ── Base Sepolia testnet ─────────────────────────────────────────────────
-    baseSepolia: {
-      id: 84532,
-      rpc: http(process.env.PONDER_RPC_URL_84532),
-    },
-
-    // ── Base mainnet ─────────────────────────────────────────────────────────
-    base: {
-      id: 8453,
-      rpc: http(process.env.PONDER_RPC_URL_8453),
-    },
+    [activeChain]: chainDefs[activeChain],
   },
 
   contracts: {

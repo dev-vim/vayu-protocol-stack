@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": ". ./.env.local && until pg_isready -d \"$DATABASE_URL\" -q; do echo 'waiting for postgres...'; sleep 2; done",
+    "predev": ". ./.env.local && bash scripts/wait-for-deps.sh",
     "dev": "ponder dev",
-    "prestart": ". ./.env.local && until pg_isready -d \"$DATABASE_URL\" -q; do echo 'waiting for postgres...'; sleep 2; done",
+    "prestart": ". ./.env.local && bash scripts/wait-for-deps.sh",
     "start": "ponder start",
     "codegen": "ponder codegen",
     "test": "vitest run",
