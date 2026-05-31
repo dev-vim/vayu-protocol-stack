@@ -39,9 +39,9 @@ cp .env.local.example .env.local
 
 | Variable | Default | Description |
 |---|---|---|
-| `PONDER_URL` | `http://localhost:42069` | Base URL of the running Ponder indexer. GraphQL is served at `PONDER_URL/graphql`. |
-
-> **Note:** `PONDER_URL` is read server-side only — do not prefix it with `NEXT_PUBLIC_`.
+| `PONDER_URL` | `http://localhost:42069` | Base URL of the running Ponder indexer. GraphQL is served at `PONDER_URL/graphql`. Server-side only — do not prefix with `NEXT_PUBLIC_`. |
+| `NEXT_PUBLIC_INDEXER_URL` | `http://localhost:42069` | Publicly exposed indexer URL used by the browser for H3 cell fetches (`/epochs/:id/cells`). Must be reachable from the client. |
+| `MOCK_DATA` | _(unset)_ | Set to `true` to render the dashboard with static fixture data (no indexer needed). Useful for UI development. |
 
 ---
 
@@ -71,6 +71,4 @@ npm run start
 
 ## Port
 
-Runs on **3000** by default (Next.js default). See the root port map in
-[`relay/README.md`](../relay/README.md) for the full stack layout — no port overlaps
-with the relay (8080), Ponder indexer (42069), or Kubo IPFS gateway.
+Runs on **3000** by default (Next.js default). See the root [port map](../README.md#stack-overview) for the full stack layout.

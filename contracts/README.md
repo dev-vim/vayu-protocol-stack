@@ -126,7 +126,7 @@ Inspect a committed epoch:
 
 ```shell
 cast call <settlement_addr> \
-  "getEpochCommitment(uint32)((bytes32,bytes32,string,address,uint64,uint32,uint32,bool,bool))" \
+  "getEpochCommitment(uint32)((bytes32,bytes32,string,address,uint64,uint32,uint32,bool))" \
   <epoch_id> --rpc-url http://127.0.0.1:8545
 ```
 

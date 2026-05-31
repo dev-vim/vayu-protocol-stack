@@ -25,16 +25,18 @@ populates the `cell_epochs` and `readings` tables for downstream analytics and f
 
 ## Configuration
 
-Copy `.env.example` to `.env` and fill in the values:
+Copy `.env.example` to `.env.local` and fill in the values:
 
 ```bash
-cp .env.example .env
+cp .env.example .env.local
 ```
 
 | Variable | Default | Description |
 |---|---|---|
+| `PONDER_CHAIN` | `anvil` | Active chain: `anvil` \| `baseSepolia` \| `base` |
 | `PONDER_RPC_URL_31337` | `http://localhost:8545` | EVM RPC for local Anvil (chain ID 31337) |
 | `PONDER_RPC_URL_84532` | _(empty)_ | EVM RPC for Base Sepolia (chain ID 84532) |
+| `PONDER_RPC_URL_8453` | _(empty)_ | EVM RPC for Base mainnet (chain ID 8453) |
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/vayu_indexer` | PostgreSQL connection string |
 | `VAYU_SETTLEMENT_ADDRESS` | `0x000…` | Deployed `VayuEpochSettlement` address |
 | `VAYU_SETTLEMENT_START_BLOCK` | `1` | First block to index (skip pre-deployment history) |
@@ -67,7 +69,7 @@ docker run -d -p 5001:5001 -p 8081:8080 --name ipfs-kubo ipfs/kubo:latest
 
 | Service | Reference |
 |---|---|
-| Anvil + deployed contracts | [`contracts/README.md`](../contracts/README.md) — note the `VayuEpochSettlement` address and set `VAYU_SETTLEMENT_ADDRESS` in `.env` |
+| Anvil + deployed contracts | [`contracts/README.md`](../contracts/README.md) — note the `VayuEpochSettlement` address and set `VAYU_SETTLEMENT_ADDRESS` in `.env.local` |
 | Relay (on-chain commit mode) | [`relay/README.md`](../relay/README.md) — the indexer has nothing to index until the relay commits on-chain |
 
 ### 1. Install dependencies
@@ -133,8 +135,8 @@ Connect to the database:
 
 ```bash
 psql postgresql://postgres:postgres@localhost:5432/vayu_indexer
-# or, using the shared .env:
-. ./.env && psql "$DATABASE_URL"
+# or, using the shared .env.local:
+. ./.env.local && psql "$DATABASE_URL"
 ```
 
 Useful queries:

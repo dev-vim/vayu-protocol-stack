@@ -249,7 +249,7 @@ class RelayControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("accepted"))
                 .andExpect(jsonPath("$.epochId").value(expectedEpochId))
-                .andExpect(jsonPath("$.receivedAt").value(greaterThan(0)));
+                .andExpect(jsonPath("$.receivedAt").value(Objects.requireNonNull(greaterThan(0))));
     }
 
     private static String payload(

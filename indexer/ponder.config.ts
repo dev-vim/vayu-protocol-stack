@@ -14,6 +14,16 @@ const port = process.env.PONDER_PORT
   ? parseInt(process.env.PONDER_PORT, 10)
   : 42069;
 
+// Select active chain via PONDER_CHAIN env var.
+// Defaults to "anvil" for local development.
+//   PONDER_CHAIN=anvil        → local Anvil node
+//   PONDER_CHAIN=baseSepolia  → Base Sepolia testnet (set PONDER_RPC_URL_84532)
+//   PONDER_CHAIN=base         → Base mainnet        (set PONDER_RPC_URL_8453)
+const activeChain = (process.env.PONDER_CHAIN ?? "anvil") as
+  | "anvil"
+  | "baseSepolia"
+  | "base";
+
 export default createConfig({
   port,
   chains: {
@@ -24,22 +34,22 @@ export default createConfig({
     },
 
     // ── Base Sepolia testnet ─────────────────────────────────────────────────
-    // baseSepolia: {
-    //   id: 84532,
-    //   rpc: http(process.env.PONDER_RPC_URL_84532),
-    // },
+    baseSepolia: {
+      id: 84532,
+      rpc: http(process.env.PONDER_RPC_URL_84532),
+    },
 
     // ── Base mainnet ─────────────────────────────────────────────────────────
-    // base: {
-    //   id: 8453,
-    //   rpc: http(process.env.PONDER_RPC_URL_8453),
-    // },
+    base: {
+      id: 8453,
+      rpc: http(process.env.PONDER_RPC_URL_8453),
+    },
   },
 
   contracts: {
     VayuEpochSettlement: {
       abi: VayuEpochSettlementAbi,
-      chain: "anvil",
+      chain: activeChain,
       address: settlementAddress,
       startBlock,
     },

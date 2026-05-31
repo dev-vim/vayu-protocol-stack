@@ -36,6 +36,13 @@ All runtime values are controlled via environment variables. Defaults are produc
 | `RELAY_SECURITY_STAKE_CHECK_ENABLED` | `false` | Reject reporters with no on-chain stake |
 | `RELAY_SECURITY_EIP712_CHAIN_ID` | `84532` | Chain ID used in EIP-712 domain separator |
 | `RELAY_SECURITY_EIP712_VERIFYING_CONTRACT` | `0x000…` | Contract address in EIP-712 domain |
+| **Stake Cache** _(requires `RELAY_SECURITY_STAKE_CHECK_ENABLED=true`)_ | | |
+| `RELAY_SECURITY_STAKE_CACHE_TTL_SECONDS` | `300` | How long a fetched stake value remains fresh (seconds) |
+| `RELAY_SECURITY_STAKE_CACHE_MAX_SIZE` | `10000` | Maximum number of reporter entries in the cache |
+| `RELAY_SECURITY_STAKE_CACHE_FAIL_OPEN` | `true` | On RPC failure, fall back to a stale/default weight rather than rejecting the submission |
+| `RELAY_SECURITY_STAKE_CACHE_CB_FAILURE_RATE_THRESHOLD` | `50` | Circuit-breaker: % of calls that must fail before the circuit opens |
+| `RELAY_SECURITY_STAKE_CACHE_CB_WAIT_DURATION_SECONDS` | `30` | Circuit-breaker: seconds to stay open before entering half-open |
+| `RELAY_SECURITY_STAKE_CACHE_CB_SLIDING_WINDOW_SIZE` | `10` | Circuit-breaker: number of calls in the sliding failure-rate window |
 | **IPFS** | | |
 | `RELAY_IPFS_PROVIDER` | `kubo` | IPFS backend: `kubo` (local) or `pinata` (managed) |
 | `RELAY_IPFS_KUBO_API_URL` | `http://localhost:5001` | Kubo RPC API endpoint |
@@ -47,6 +54,42 @@ All runtime values are controlled via environment variables. Defaults are produc
 | `RELAY_CHAIN_ON_CHAIN_COMMIT_ENABLED` | `false` | Submit real on-chain epoch commitments |
 | `RELAY_CHAIN_RELAY_PRIVATE_KEY` | _(empty)_ | Relay wallet private key (hex, no `0x` prefix) |
 | `RELAY_CHAIN_CHAIN_ID` | `84532` | EIP-155 chain ID for transaction signing |
+| `RELAY_CHAIN_RPC_CONNECT_TIMEOUT_MS` | `5000` | TCP connect timeout for the JSON-RPC HTTP client (ms) |
+| `RELAY_CHAIN_RPC_READ_TIMEOUT_MS` | `10000` | Socket read timeout for the JSON-RPC HTTP client (ms) |
+
+---
+
+## Stake Check Resilience
+
+When `RELAY_SECURITY_STAKE_CHECK_ENABLED=true` the relay calls `VayuEpochSettlement.reporterStake(address)` via `eth_call` to verify each submitter has an active stake. Three mechanisms protect the ingestion path from RPC unavailability.
+
+### Caffeine TTL cache
+
+Every successful stake lookup is stored in a Caffeine cache with a configurable TTL (default 5 minutes). Subsequent submissions from the same reporter address are served from the cache without touching the RPC. A second, unbounded _stale cache_ retains the last-known-good value indefinitely and acts as the first fallback if the TTL entry has expired.
+
+### Resilience4j circuit breaker
+
+The RPC call is wrapped in a Resilience4j circuit breaker named `stake-rpc`. After the configured failure-rate threshold is exceeded within the sliding window, the circuit opens and delegate calls are short-circuited immediately (no network round-trip). The circuit re-enters half-open after the configured wait duration.
+
+Fallback priority when the circuit is open or the delegate throws:
+
+1. **Stale cache** — if a previous value was ever fetched for this address, that value is returned with a `WARN` log.
+2. **Fallback weight (fail-open, default)** — `BigInteger.ONE` is returned so the reporter participates with minimal weight. The on-chain contract is the authoritative settlement layer; a brief window of accepting a reporter whose current stake is unknown is preferable to rejecting all submissions during an outage.
+3. **Exception (fail-closed)** — if `RELAY_SECURITY_STAKE_CACHE_FAIL_OPEN=false` and no cached value exists, a `StakeQueryException` propagates to the ingestion handler and the submission receives `503 Service Unavailable`.
+
+### Validation ordering and replay-key safety
+
+The ingestion pipeline validates stake **before** claiming the replay key (`reporter:epochId:h3Index`). This prevents a transient RPC failure from permanently poisoning a reporter's slot for the current epoch: if the stake check throws, no key is consumed and the reporter can retry the same submission once the RPC recovers without receiving a `409 Conflict`.
+
+Full validation order:
+```
+fields → timestamp freshness → epoch consistency → H3 resolution
+  → signature → stake check → claim replay key → rate limit → enqueue
+```
+
+### Epoch commit: stake pre-fetch
+
+During reward allocation `ProtocolEpochAggregator` collects all unique reporter addresses that scored above zero across all active cells, then resolves their stakes in a single pass before the cell loop. This collapses the RPC fan-out from O(reporters × cells) to O(unique reporters) per epoch commit. If a stake query fails for any individual reporter during this pass, that reporter falls back to weight `1` and the rest of the epoch commit continues normally.
 
 ---
 
@@ -66,10 +109,8 @@ docker run -d -p 5001:5001 --name ipfs-kubo ipfs/kubo:latest
 
 ```bash
 cp .env.local.example .env.local
-# .env.local overrides three production defaults for fast local cycling:
-#   RELAY_EPOCH_DURATION_SECONDS=60            (1-minute epochs instead of 1 hour)
-#   RELAY_EPOCH_COMMIT_CHECK_INTERVAL_MS=5000  (commit worker polls every 5 s)
-#   RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS=30  (30 s window → 2 submissions per epoch)
+# .env.local enables DEBUG logging and sets short epochs for fast local cycling.
+# The on-chain commit block is commented out — this is Mode A (log-only).
 source .env.local && mvn spring-boot:run
 ```
 
@@ -140,14 +181,12 @@ docker run -d -p 5001:5001 --name ipfs-kubo ipfs/kubo:latest
 
 ### 2. Configure and start the relay
 
-Add the on-chain vars to `.env.local` (in addition to the base defaults from `.env.local.example`):
-
 ```bash
 cd ../relay
 cp .env.local.example .env.local
 ```
 
-Append to `.env.local`:
+Uncomment the on-chain commit block in `.env.local` and fill in the settlement address:
 
 ```bash
 # On-chain commit — Anvil

@@ -6,10 +6,12 @@ import protocol.vayu.relay.api.error.RelayApiException;
 import protocol.vayu.relay.config.RelayProperties;
 import protocol.vayu.relay.service.RelayMetrics;
 import protocol.vayu.relay.service.commit.EpochIngressWindow;
+import protocol.vayu.relay.service.commit.aggregation.StakeQueryException;
 import protocol.vayu.relay.service.ingestion.security.ReporterStakeChecker;
 import protocol.vayu.relay.service.ingestion.security.SignatureVerifier;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -49,8 +51,13 @@ public class ReadingIngestionService {
     ) {
         this(relayProperties, signatureVerifier, reporterStakeChecker, new EpochIngressWindow() {
             @Override
-            public boolean enqueueIfNotSeen(ReadingSubmissionRequest request, String replayKey) {
+            public boolean tryClaimReplayKey(long epochId, String replayKey) {
                 return true; // no-op for lightweight unit tests
+            }
+
+            @Override
+            public void releaseReplayKey(long epochId, String replayKey) {
+                // no-op
             }
 
             @Override
@@ -98,20 +105,32 @@ public class ReadingIngestionService {
         try { validateSignature(request); }
         catch (RelayApiException e) { relayMetrics.recordRejectedInvalidSig(); throw e; }
 
+        try { validateReporterStake(request.reporter()); }
+        catch (RelayApiException e) {
+            if (e.status() == HttpStatus.SERVICE_UNAVAILABLE) {
+                relayMetrics.recordRejectedStakeUnavailable();
+            } else {
+                relayMetrics.recordRejectedNoStake();
+            }
+            throw e;
+        }
+
         String replayKey = request.reporter().toLowerCase()
                 + ":" + request.epochId()
                 + ":" + request.h3Index().toLowerCase();
-        if (!epochIngressWindow.enqueueIfNotSeen(request, replayKey)) {
+        if (!epochIngressWindow.tryClaimReplayKey(request.epochId(), replayKey)) {
             relayMetrics.recordRejectedDuplicate();
             throw RelayApiException.conflict("duplicate reading for this epoch and cell");
         }
 
         try { enforceReporterRateLimit(request.reporter(), now); }
-        catch (RelayApiException e) { relayMetrics.recordRejectedRateLimited(); throw e; }
+        catch (RelayApiException e) {
+            epochIngressWindow.releaseReplayKey(request.epochId(), replayKey);
+            relayMetrics.recordRejectedRateLimited();
+            throw e;
+        }
 
-        try { validateReporterStake(request.reporter()); }
-        catch (RelayApiException e) { relayMetrics.recordRejectedNoStake(); throw e; }
-
+        epochIngressWindow.enqueue(request);
         relayMetrics.recordAccepted();
         return new ReadingAcceptedResponse("accepted", request.epochId(), now);
     }
@@ -131,8 +150,16 @@ public class ReadingIngestionService {
             return;
         }
 
-        if (!reporterStakeChecker.hasActiveStake(reporter)) {
-            throw RelayApiException.unauthorized("reporter has no active stake");
+        try {
+            if (!reporterStakeChecker.hasActiveStake(reporter)) {
+                throw RelayApiException.unauthorized("reporter has no active stake");
+            }
+        } catch (RelayApiException e) {
+            throw e;
+        } catch (StakeQueryException e) {
+            // Only reachable in fail-closed mode (CachedStakeWeightProvider re-throws when failOpen=false
+            // and no cache entry is available). Return 503 so the reporter can retry.
+            throw RelayApiException.serviceUnavailable("stake check temporarily unavailable");
         }
     }
 

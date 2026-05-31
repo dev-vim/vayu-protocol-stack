@@ -46,6 +46,16 @@ relay:
       domain-version: ${RELAY_SECURITY_EIP712_DOMAIN_VERSION:1}
       chain-id: ${RELAY_SECURITY_EIP712_CHAIN_ID:84532}
       verifying-contract: ${RELAY_SECURITY_EIP712_VERIFYING_CONTRACT:0x0000000000000000000000000000000000000000}
+    stake-cache:
+      ttl-seconds: ${RELAY_SECURITY_STAKE_CACHE_TTL_SECONDS:300}
+      max-size: ${RELAY_SECURITY_STAKE_CACHE_MAX_SIZE:10000}
+      # fail-open: when true, stale cached stake (or weight=1 fallback) is used on RPC failure.
+      # The on-chain contract is authoritative; a brief window of accepting low-stake reporters
+      # is preferable to rejecting all submissions during an RPC outage.
+      fail-open: ${RELAY_SECURITY_STAKE_CACHE_FAIL_OPEN:true}
+      cb-failure-rate-threshold: ${RELAY_SECURITY_STAKE_CACHE_CB_FAILURE_RATE_THRESHOLD:50}
+      cb-wait-duration-seconds: ${RELAY_SECURITY_STAKE_CACHE_CB_WAIT_DURATION_SECONDS:30}
+      cb-sliding-window-size: ${RELAY_SECURITY_STAKE_CACHE_CB_SLIDING_WINDOW_SIZE:10}
   ipfs:
     # "kubo" for local dev node (docker run -p 5001:5001 ipfs/kubo)
     # "pinata" for production managed pinning
@@ -66,3 +76,6 @@ relay:
     relay-private-key: ${RELAY_CHAIN_RELAY_PRIVATE_KEY:}
     # EIP-155 chain ID for transaction signing
     chain-id: ${RELAY_CHAIN_CHAIN_ID:84532}
+    # HTTP client timeouts for JSON-RPC calls (milliseconds)
+    rpc-connect-timeout-ms: ${RELAY_CHAIN_RPC_CONNECT_TIMEOUT_MS:5000}
+    rpc-read-timeout-ms: ${RELAY_CHAIN_RPC_READ_TIMEOUT_MS:10000}

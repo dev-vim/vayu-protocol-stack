@@ -43,7 +43,33 @@ public record RelayProperties(Epoch epoch, Validation validation, Security secur
     ) {
     }
 
-    public record Security(boolean signatureVerificationEnabled, boolean stakeCheckEnabled, Eip712 eip712) {
+    public record Security(boolean signatureVerificationEnabled, boolean stakeCheckEnabled, Eip712 eip712, StakeCache stakeCache) {
+    }
+
+    /**
+     * Caching and circuit-breaker configuration for the on-chain stake weight provider.
+     * Only relevant when {@code relay.security.stake-check-enabled=true}.
+     */
+    public record StakeCache(
+            /** How long a fetched stake value remains fresh in the hot cache (seconds). */
+            long ttlSeconds,
+            /** Maximum number of reporter entries in the hot cache. */
+            long maxSize,
+            /**
+             * When true (default), an RPC failure falls back to a stale/cached stake value,
+             * or {@code BigInteger.ONE} when no prior value exists. The on-chain contract is
+             * the authoritative settlement layer, so accepting a potentially-low-stake reporter
+             * briefly is preferable to rejecting all submissions during an RPC outage.
+             * When false, the circuit breaker failing causes a 503 Service Unavailable response.
+             */
+            boolean failOpen,
+            /** Resilience4j: percentage of calls that must fail before the circuit opens (0-100). */
+            int cbFailureRateThreshold,
+            /** Resilience4j: seconds the circuit stays open before entering half-open state. */
+            long cbWaitDurationSeconds,
+            /** Resilience4j: sliding window size (number of calls) for failure-rate calculation. */
+            int cbSlidingWindowSize
+    ) {
     }
 
     public record Eip712(String domainName, String domainVersion, long chainId, String verifyingContract) {
@@ -79,7 +105,11 @@ public record RelayProperties(Epoch epoch, Validation validation, Security secur
             /** Relay wallet private key (hex, no 0x prefix). Set via RELAY_CHAIN_RELAY_PRIVATE_KEY env var. */
             String relayPrivateKey,
             /** EIP-155 chain ID used for transaction signing (e.g. 84532 for Base Sepolia). */
-            long chainId
+            long chainId,
+            /** TCP connect timeout for the JSON-RPC HTTP client (milliseconds). Default: 5000. */
+            int rpcConnectTimeoutMs,
+            /** Socket read timeout for the JSON-RPC HTTP client (milliseconds). Default: 10000. */
+            int rpcReadTimeoutMs
     ) {
     }
 }

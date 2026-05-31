@@ -241,14 +241,158 @@ class ReadingIngestionServiceTest {
     }
 
     @Test
-    void ingestShouldAcceptSameReporterDifferentCellsInSameEpoch() {
+    void ingestShouldReleaseReplayKeyOnRateLimitSoRetryIsNotDuplicate() {
         InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+        // Rate limit window of 300s — both requests arrive at the same "now", so the
+        // second one is rate-limited.
         ReadingIngestionService svc = new ReadingIngestionService(
                 relayProperties(false, false),
                 request -> true,
                 reporter -> true,
                 store
         );
+
+        long now = Instant.now().getEpochSecond();
+        String reporter = "0xdddddddddddddddddddddddddddddddddddddddd";
+
+        // first request for cell1 accepted → key claimed + enqueued
+        svc.ingest(validRequest(reporter, now));
+        assertEquals(1, store.pendingReadings());
+
+        // second request for cell2 by the same reporter — passes replay guard (different cell)
+        // but hits rate limit; the key for cell2 must be released
+        ReadingSubmissionRequest cell2 = new ReadingSubmissionRequest(
+                reporter, "0x0882830a2fffffff",
+                now / 3600, now, 120, 350, null, null, null, null, null, signature());
+        assertThrows(RelayApiException.class, () -> svc.ingest(cell2));
+        assertEquals(1, store.pendingReadings()); // cell2 must NOT be in queue
+
+        // simulate reporter waiting out the rate-limit window by using a fresh service
+        // (same store, new rate-limit state) — cell2 should now be accepted, not conflict
+        ReadingIngestionService fresh = new ReadingIngestionService(
+                relayProperties(false, false),
+                request -> true,
+                reporter2 -> true,
+                store
+        );
+        ReadingSubmissionRequest cell2Retry = new ReadingSubmissionRequest(
+                reporter, "0x0882830a2fffffff",
+                now / 3600, now, 120, 350, null, null, null, null, null, signature());
+        fresh.ingest(cell2Retry);
+        assertEquals(2, store.pendingReadings()); // cell2 is now accepted
+    }
+
+    @Test
+    void ingestShouldReleaseReplayKeyOnNoStakeSoRetryIsNotDuplicate() {
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+        long now = Instant.now().getEpochSecond();
+        String reporter = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+        // first attempt: stake check fails → key must be released
+        ReadingIngestionService noStakeSvc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                r -> false,
+                store
+        );
+        assertThrows(RelayApiException.class, () -> noStakeSvc.ingest(validRequest(reporter, now)));
+        assertEquals(0, store.pendingReadings()); // must NOT be enqueued
+
+        // second attempt after staking: same cell should be accepted, not conflict
+        ReadingIngestionService stakedSvc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                r -> true,
+                store
+        );
+        stakedSvc.ingest(validRequest(reporter, now));
+        assertEquals(1, store.pendingReadings());
+    }
+
+    // ── Phase 3 resilience: replay-key poisoning fix and 503 path ─────────────
+
+    @Test
+    void stakeQueryExceptionShouldReturn503() {
+        // When the stake provider is temporarily unavailable (fail-closed mode surfaced as
+        // StakeQueryException), the service should respond with 503 Service Unavailable.
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                reporter -> { throw new protocol.vayu.relay.service.commit.aggregation.StakeQueryException("rpc down"); }
+        );
+
+        RelayApiException ex = assertThrows(RelayApiException.class,
+                () -> svc.ingest(validRequest("0xf1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1", Instant.now().getEpochSecond())));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex.status());
+        assertEquals("service_unavailable", ex.errorCode());
+    }
+
+    @Test
+    void stakeQueryExceptionShouldNotConsumeReplayKey() {
+        // Fix for replay-key poisoning: stake check now runs BEFORE tryClaimReplayKey.
+        // A StakeQueryException (temporary RPC outage) must not permanently consume the
+        // replay key — the reporter must be able to retry the same submission once the RPC recovers.
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+        long now = Instant.now().getEpochSecond();
+        String reporter = "0xf2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2";
+
+        // First attempt: stake RPC throws → 503
+        ReadingIngestionService rpcDownSvc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                r -> { throw new protocol.vayu.relay.service.commit.aggregation.StakeQueryException("rpc unavailable"); },
+                store
+        );
+        assertThrows(RelayApiException.class, () -> rpcDownSvc.ingest(validRequest(reporter, now)));
+        assertEquals(0, store.pendingReadings()); // must not be enqueued
+
+        // Second attempt: RPC has recovered → the same reporter+epoch+cell must be accepted
+        ReadingIngestionService rpcUpSvc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                r -> true,
+                store
+        );
+        ReadingAcceptedResponse response = rpcUpSvc.ingest(validRequest(reporter, now));
+        assertEquals("accepted", response.status());
+        assertEquals(1, store.pendingReadings());
+    }
+
+    @Test
+    void stakeCheckShouldRunBeforeReplayKeyIsClaimed() {
+        // Verify ordering: if validation fails (unauthorized) before the key is claimed,
+        // a retry must not be rejected as a duplicate.
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
+        long now = Instant.now().getEpochSecond();
+        String reporter = "0xf3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3";
+
+        ReadingIngestionService unstaked = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                r -> false,   // stake check returns false (unauthorized)
+                store
+        );
+
+        // Rejected with 401 — key must NOT have been consumed
+        RelayApiException ex = assertThrows(RelayApiException.class,
+                () -> unstaked.ingest(validRequest(reporter, now)));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.status());
+
+        // Reporter subsequently stakes and retries — must succeed (not 409 duplicate)
+        ReadingIngestionService staked = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                r -> true,
+                store
+        );
+        ReadingAcceptedResponse resp = staked.ingest(validRequest(reporter, now));
+        assertEquals("accepted", resp.status());
+    }
+
+    @Test
+    void ingestShouldAcceptSameReporterDifferentCellsInSameEpoch() {
+        InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
 
         // Verify enqueueIfNotSeen allows (reporter, epoch, cell1) and (reporter, epoch, cell2)
         // independently. We bypass the service-level rate limit by calling enqueueIfNotSeen
@@ -322,7 +466,8 @@ class ReadingIngestionServiceTest {
         RelayProperties.Security security = new RelayProperties.Security(
             signatureVerificationEnabled,
             stakeCheckEnabled,
-            eip712
+            eip712,
+            null
         );
         return new RelayProperties(epoch, validation, security, null, null);
     }
@@ -513,5 +658,23 @@ class ReadingIngestionServiceTest {
         long now = Instant.now().getEpochSecond();
         assertThrows(RelayApiException.class, () -> svc.ingest(validRequest("0xaaaa000000000000000000000000000000000009", now)));
         assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "no_stake").count());
+        assertEquals(0.0, registry.counter("vayu.readings.rejected", "reason", "stake_unavailable").count());
+    }
+
+    @Test
+    void metricsShouldRecordStakeUnavailableWhenStakeRpcFails() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                reporter -> { throw new protocol.vayu.relay.service.commit.aggregation.StakeQueryException("rpc down"); },
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        assertThrows(RelayApiException.class, () -> svc.ingest(validRequest("0xaaaa000000000000000000000000000000000009", now)));
+        assertEquals(0.0, registry.counter("vayu.readings.rejected", "reason", "no_stake").count());
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "stake_unavailable").count());
     }
 }

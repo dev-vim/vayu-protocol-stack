@@ -179,6 +179,10 @@ services:
       - "3000:3000"
     environment:
       PONDER_URL: http://ponder:42069
+      # Browser-side URL for H3 cell fetches (EpochHexMap client component).
+      # Must be reachable from the host browser — use the exposed host port, not the
+      # internal Docker hostname.
+      NEXT_PUBLIC_INDEXER_URL: http://localhost:42069
     depends_on:
       ponder:
         condition: service_healthy

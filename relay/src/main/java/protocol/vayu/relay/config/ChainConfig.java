@@ -19,11 +19,14 @@ import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.http.HttpService;
+import okhttp3.OkHttpClient;
+import protocol.vayu.relay.service.commit.aggregation.CachedStakeWeightProvider;
 import protocol.vayu.relay.service.commit.aggregation.StakeWeightProvider;
 import protocol.vayu.relay.service.commit.aggregation.UniformStakeWeightProvider;
 import protocol.vayu.relay.service.commit.aggregation.Web3jStakeWeightProvider;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class ChainConfig {
@@ -80,12 +83,26 @@ public class ChainConfig {
     /**
      * Live stake provider: reads {@code VayuEpochSettlement.reporterStake(address)} via eth_call.
      * Active when relay.security.stake-check-enabled=true.
+     * <p>
+     * The raw {@link Web3jStakeWeightProvider} is wrapped in a {@link CachedStakeWeightProvider}
+     * that adds a Caffeine TTL cache and a Resilience4j circuit breaker so that a momentary
+     * RPC outage does not block the ingestion path.
      */
     @Bean
     @ConditionalOnProperty(name = "relay.security.stake-check-enabled", havingValue = "true")
     public StakeWeightProvider web3jStakeWeightProvider(RelayProperties props) {
-        Web3j web3j = Web3j.build(new HttpService(props.chain().rpcUrl()));
-        return new Web3jStakeWeightProvider(web3j, props.chain().settlementAddress());
+        OkHttpClient httpClient = new OkHttpClient.Builder()
+                .connectTimeout(props.chain().rpcConnectTimeoutMs(), TimeUnit.MILLISECONDS)
+                .readTimeout(props.chain().rpcReadTimeoutMs(), TimeUnit.MILLISECONDS)
+                .build();
+        Web3j web3j = Web3j.build(new HttpService(props.chain().rpcUrl(), httpClient));
+        StakeWeightProvider raw = new Web3jStakeWeightProvider(web3j, props.chain().settlementAddress());
+        RelayProperties.StakeCache cacheConfig = props.security().stakeCache();
+        if (cacheConfig == null) {
+            throw new IllegalStateException(
+                    "relay.security.stake-cache must be configured when stake-check-enabled=true");
+        }
+        return new CachedStakeWeightProvider(raw, cacheConfig);
     }
 
     /**

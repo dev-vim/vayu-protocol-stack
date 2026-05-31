@@ -2,11 +2,22 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 
-// vi.fn() is a plain function and works as a tagged template tag directly:
-//   sql`INSERT INTO ...`  →  mockSql(["INSERT INTO ...", ""], ...values)
-//   sql(row)              →  mockSql(row)
-// No Proxy required.
-const mockSql = vi.hoisted(() => vi.fn().mockReturnValue(undefined));
+// mockTx  — the transaction client passed to sql.begin() callbacks.
+//   tx`UPDATE ...` → mockTx(["UPDATE ..."], ...values)
+//   Default return: { count: 1 } — simulates one row updated (epoch transitions
+//   from PENDING to INGESTED).  Override per-test with mockTx.mockResolvedValueOnce().
+//
+// mockSql — the module-level sql tagged-template tag.
+//   sql`INSERT ...` → mockSql(["INSERT ..."], ...values)
+//   sql(rows)       → mockSql(rows)
+//   sql.begin(fn)   → calls fn(mockTx) directly (no real transaction).
+const { mockSql, mockTx } = vi.hoisted(() => {
+  const tx = vi.fn();
+  const sql = Object.assign(vi.fn().mockReturnValue(undefined), {
+    begin: vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+  });
+  return { mockSql: sql, mockTx: tx };
+});
 
 vi.mock("../../src/sidecar/db.js", () => ({
   sql: mockSql,
@@ -87,18 +98,21 @@ const VALID_BLOB = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Checks if any sql call contained `substring` anywhere in its serialised args.
- * Works for both tagged-template calls (args[0] is a strings array) and
- * sql(row) helper calls (args[0] is a plain object).
+ * Serialises all calls made to mockSql (direct sql calls) AND mockTx (calls
+ * inside sql.begin() transactions) into one string for assertion.
  */
+function allSqlCallsJson(): string {
+  return JSON.stringify([...mockSql.mock.calls, ...mockTx.mock.calls]);
+}
+
 function expectSqlToHaveIncluded(substring: string): void {
-  const found = mockSql.mock.calls.some(args => JSON.stringify(args).includes(substring));
-  expect(found, `Expected a SQL call containing "${substring}"`).toBe(true);
+  const all = allSqlCallsJson();
+  expect(all, `Expected a SQL call containing "${substring}"`).toContain(substring);
 }
 
 function expectSqlNotToHaveIncluded(substring: string): void {
-  const found = mockSql.mock.calls.some(args => JSON.stringify(args).includes(substring));
-  expect(found, `Expected no SQL call containing "${substring}"`).toBe(false);
+  const all = allSqlCallsJson();
+  expect(all, `Expected no SQL call containing "${substring}"`).not.toContain(substring);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -106,6 +120,9 @@ function expectSqlNotToHaveIncluded(substring: string): void {
 describe("processEpoch()", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset mockTx fully (clears the once-queue) then set the default: one row
+    // updated, meaning the epoch transitioned PENDING → INGESTED successfully.
+    mockTx.mockReset().mockResolvedValue({ count: 1 });
   });
 
   it("marks epoch FAILED when fetchBlob throws", async () => {
@@ -169,5 +186,40 @@ describe("processEpoch()", () => {
     mockFetchBlob.mockRejectedValueOnce(new Error("gateway down"));
     mockSql.mockReturnValueOnce(Promise.reject(new Error("db also down")));
     await expect(processEpoch(EPOCH_ID, IPFS_CID)).resolves.toBeUndefined();
+  });
+
+  // ── Reporter aggregate updates ─────────────────────────────────────────────
+
+  it("updates totalReadings and totalRewards for each reporter after ingestion", async () => {
+    mockFetchBlob.mockResolvedValueOnce(JSON.stringify(VALID_BLOB));
+    await processEpoch(EPOCH_ID, IPFS_CID);
+
+    // The transaction must have updated the reporters row.
+    expectSqlToHaveIncluded("total_readings");
+    expectSqlToHaveIncluded("total_rewards");
+    // The reporter address and reward amount from the fixture must appear.
+    expectSqlToHaveIncluded(REPORTER.toLowerCase());
+    expectSqlToHaveIncluded("1000000000000000000");
+  });
+
+  it("skips reporter aggregate updates when epoch was already INGESTED (idempotency)", async () => {
+    mockFetchBlob.mockResolvedValueOnce(JSON.stringify(VALID_BLOB));
+    // Simulate the epoch being already INGESTED — the guarded UPDATE returns 0 rows.
+    mockTx.mockResolvedValueOnce({ count: 0 });
+    await processEpoch(EPOCH_ID, IPFS_CID);
+
+    // The epoch status transition was attempted (INGESTED appears in the tx call)
+    // but reporter aggregate columns must NOT have been touched.
+    expectSqlNotToHaveIncluded("total_readings");
+    expectSqlNotToHaveIncluded("total_rewards");
+  });
+
+  it("skips reporter updates when the blob has no readings or rewards", async () => {
+    const emptyRewardsBlob = { ...VALID_BLOB, readings: [], rewards: [] };
+    mockFetchBlob.mockResolvedValueOnce(JSON.stringify(emptyRewardsBlob));
+    await processEpoch(EPOCH_ID, IPFS_CID);
+    expectSqlToHaveIncluded("INGESTED");
+    expectSqlNotToHaveIncluded("total_readings");
+    expectSqlNotToHaveIncluded("total_rewards");
   });
 });

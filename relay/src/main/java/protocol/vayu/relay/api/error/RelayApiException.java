@@ -31,6 +31,10 @@ public class RelayApiException extends RuntimeException {
         return new RelayApiException(HttpStatus.UNAUTHORIZED, "unauthorized", message, null);
     }
 
+    public static RelayApiException serviceUnavailable(String message) {
+        return new RelayApiException(HttpStatus.SERVICE_UNAVAILABLE, "service_unavailable", message, null);
+    }
+
     public HttpStatus status() {
         return status;
     }

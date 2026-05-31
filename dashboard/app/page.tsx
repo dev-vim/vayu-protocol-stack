@@ -1,40 +1,13 @@
+import Link from "next/link";
 import { fetchGraphQL } from "@/lib/ponder";
+import { FIXTURE_DATA, FIXTURE_CELLS } from "@/lib/fixtures";
+import type { DashboardData } from "@/lib/types";
+import EpochHexMapLoader from "./components/EpochHexMapLoader";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+const INDEXER_URL =
+  process.env.NEXT_PUBLIC_INDEXER_URL ?? "http://localhost:42069";
 
-interface Epoch {
-  epochId: number;
-  relay: string;
-  activeCells: number;
-  totalReadings: number;
-  totalReward: string; // BigInt serialised as string by Ponder
-  committedAt: number; // UNIX seconds
-  ipfsStatus: "PENDING" | "INGESTED" | "FAILED";
-  swept: boolean;
-}
-
-interface Reporter {
-  address: string;
-  stake: string;
-  totalReadings: number;
-  totalRewards: string;
-  totalClaimed: string;
-  isSlashed: boolean;
-  lastSeenEpoch: number | null;
-}
-
-interface Relay {
-  address: string;
-  stake: string;
-  isActive: boolean;
-  epochsCommitted: number;
-}
-
-interface DashboardData {
-  epochss: { items: Epoch[] };
-  reporterss: { items: Reporter[] };
-  relayss: { items: Relay[] };
-}
+export const revalidate = 60;
 
 // ── GraphQL query ─────────────────────────────────────────────────────────────
 
@@ -71,6 +44,25 @@ const DASHBOARD_QUERY = `
         epochsCommitted
       }
     }
+    challengess(limit: 10, orderBy: "blockNumber", orderDirection: "desc") {
+      items {
+        epochId
+        challenger
+        challengeType
+        succeeded
+        txHash
+      }
+    }
+    slashess(limit: 10, orderBy: "blockNumber", orderDirection: "desc") {
+      items {
+        epochId
+        challengeType
+        offender
+        slashAmount
+        fishermanReward
+        txHash
+      }
+    }
   }
 `;
 
@@ -80,6 +72,33 @@ function formatVayu(wei: string | null | undefined): string {
   if (wei == null) return "—";
   try {
     const vayu = Number(BigInt(wei)) / 1e18;
+    return vayu.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function subVayu(a: string | null | undefined, b: string | null | undefined): string {
+  if (a == null || b == null) return "—";
+  try {
+    const diff = BigInt(a) - BigInt(b);
+    const vayu = Number(diff < 0n ? 0n : diff) / 1e18;
+    return vayu.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function sumVayu(items: string[]): string {
+  try {
+    const total = items.reduce((acc, v) => acc + BigInt(v ?? "0"), 0n);
+    const vayu = Number(total) / 1e18;
     return vayu.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -109,22 +128,40 @@ const IPFS_BADGE: Record<string, string> = {
   FAILED: "bg-red-500/15 text-red-400",
 };
 
+const CHALLENGE_TYPE_LABEL: Record<string, string> = {
+  SPATIAL_ANOMALY:    "Spatial Anomaly",
+  REWARD_COMPUTATION: "Reward Computation",
+  DATA_INTEGRITY:     "Data Integrity",
+  DUPLICATE_LOCATION: "Duplicate Location",
+  PENALTY_LIST_FRAUD: "Penalty List Fraud",
+};
+
 // ── Page ──────────────────────────────────────────────────────────────────────
+
+const MOCK = process.env.MOCK_DATA === "true";
 
 export default async function DashboardPage() {
   let data: DashboardData | null = null;
-  try {
-    data = await fetchGraphQL<DashboardData>(DASHBOARD_QUERY);
-  } catch {
-    // Ponder not running or not yet synced — render empty state below
+  if (MOCK) {
+    data = FIXTURE_DATA;
+  } else {
+    try {
+      data = await fetchGraphQL<DashboardData>(DASHBOARD_QUERY);
+    } catch {
+      // Ponder not running or not yet synced — render empty state below
+    }
   }
 
   const epochs = data?.epochss.items ?? [];
   const reporters = data?.reporterss.items ?? [];
   const relays = data?.relayss.items ?? [];
+  const challenges = data?.challengess.items ?? [];
+  const slashes = data?.slashess.items ?? [];
 
   const latestEpoch = epochs[0] ?? null;
   const activeRelays = relays.filter((r) => r.isActive).length;
+  const totalReadings = epochs.reduce((acc, e) => acc + e.totalReadings, 0);
+  const totalVayu = sumVayu(epochs.map((e) => e.totalReward));
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -140,8 +177,15 @@ export default async function DashboardPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-10">
-        {/* ── Connection warning ─────────────────────────────────────────────── */}
-        {data === null && (
+        {/* ── Connection warning / mock banner ───────────────────────────────── */}
+        {MOCK && (
+          <div className="rounded-xl border border-sky-800/50 bg-sky-950/30 px-5 py-4 text-sm text-sky-400">
+            Mock data active.{" "}
+            <span className="text-sky-300">Remove <code className="font-mono">MOCK_DATA=true</code> from{" "}
+            <code className="font-mono">.env.local</code> to connect to the live indexer.</span>
+          </div>
+        )}
+        {!MOCK && data === null && (
           <div className="rounded-xl border border-amber-800/50 bg-amber-950/30 px-5 py-4 text-sm text-amber-400">
             Could not reach the Ponder indexer. Start it with{" "}
             <code className="font-mono text-amber-300">
@@ -161,19 +205,29 @@ export default async function DashboardPage() {
             sub={latestEpoch ? formatTime(latestEpoch.committedAt) : "no data yet"}
           />
           <StatCard
-            label="Epochs Committed"
-            value={epochs.length > 0 ? String(epochs.length) : "0"}
-            sub={epochs.length === 15 ? "showing last 15" : "total"}
+            label="Total Readings"
+            value={totalReadings > 0 ? totalReadings.toLocaleString("en-US") : "0"}
+            sub={epochs.length === 15 ? "across last 15 epochs" : `across ${epochs.length} epochs`}
           />
           <StatCard
-            label="Reporters"
-            value={String(reporters.length)}
-            sub={reporters.length === 20 ? "showing top 20 by stake" : "total"}
+            label="VAYU Distributed"
+            value={totalVayu}
+            sub={epochs.length === 15 ? "last 15 epochs" : "all indexed epochs"}
           />
           <StatCard
             label="Active Relays"
             value={String(activeRelays)}
             sub={`${relays.length} registered`}
+          />
+        </section>
+
+        {/* ── H3 cell map ──────────────────────────────────────────────────── */}
+        <section>
+          <SectionHeading>Cell Air-Quality Map</SectionHeading>
+          <EpochHexMapLoader
+            epochs={epochs}
+            indexerUrl={INDEXER_URL}
+            mockCellsByEpoch={MOCK ? FIXTURE_CELLS : undefined}
           />
         </section>
 
@@ -192,7 +246,7 @@ export default async function DashboardPage() {
                     <Th>Cells</Th>
                     <Th>Readings</Th>
                     <Th>Total Reward</Th>
-                    <Th>IPFS</Th>
+                    <Th>Status</Th>
                     <Th>Committed</Th>
                   </tr>
                 </thead>
@@ -203,9 +257,12 @@ export default async function DashboardPage() {
                       className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/60 transition-colors"
                     >
                       <Td>
-                        <span className="font-mono text-teal-400">
+                        <Link
+                          href={`/epochs/${e.epochId}`}
+                          className="font-mono text-teal-400 hover:text-teal-300 hover:underline"
+                        >
                           #{e.epochId}
-                        </span>
+                        </Link>
                       </Td>
                       <Td>
                         <span className="font-mono text-zinc-400">
@@ -220,11 +277,18 @@ export default async function DashboardPage() {
                         </span>
                       </Td>
                       <Td>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${IPFS_BADGE[e.ipfsStatus] ?? ""}`}
-                        >
-                          {e.ipfsStatus}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${IPFS_BADGE[e.ipfsStatus] ?? ""}`}
+                          >
+                            {e.ipfsStatus}
+                          </span>
+                          {e.swept && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-500/20 text-zinc-400">
+                              Swept
+                            </span>
+                          )}
+                        </div>
                       </Td>
                       <Td>
                         <span className="text-zinc-400">
@@ -252,8 +316,8 @@ export default async function DashboardPage() {
                     <Th>Address</Th>
                     <Th>Stake</Th>
                     <Th>Readings</Th>
-                    <Th>Rewards Earned</Th>
-                    <Th>Claimed</Th>
+                    <Th>Earned</Th>
+                    <Th>Unclaimed</Th>
                     <Th>Last Epoch</Th>
                     <Th>Status</Th>
                   </tr>
@@ -281,8 +345,8 @@ export default async function DashboardPage() {
                         </span>
                       </Td>
                       <Td>
-                        <span className="font-mono">
-                          {formatVayu(r.totalClaimed)} VAYU
+                        <span className="font-mono text-teal-400">
+                          {subVayu(r.totalRewards, r.totalClaimed)} VAYU
                         </span>
                       </Td>
                       <Td>
@@ -296,6 +360,157 @@ export default async function DashboardPage() {
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400">
                             Active
+                          </span>
+                        )}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* ── Challenges / Disputes ─────────────────────────────────────── */}
+        <section>
+          <SectionHeading>Challenges &amp; Disputes</SectionHeading>
+          {challenges.length === 0 ? (
+            <EmptyState message="No challenges indexed yet." />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-zinc-800">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
+                    <Th>Epoch</Th>
+                    <Th>Type</Th>
+                    <Th>Challenger</Th>
+                    <Th>Outcome</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {challenges.map((c) => (
+                    <tr
+                      key={`${c.epochId}-${c.challenger}-${c.challengeType}`}
+                      className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/60 transition-colors"
+                    >
+                      <Td>
+                        <Link
+                          href={`/epochs/${c.epochId}`}
+                          className="font-mono text-teal-400 hover:text-teal-300 hover:underline"
+                        >
+                          #{c.epochId}
+                        </Link>
+                      </Td>
+                      <Td>{CHALLENGE_TYPE_LABEL[c.challengeType] ?? c.challengeType}</Td>
+                      <Td>
+                        <span className="font-mono text-zinc-400">
+                          {truncateAddr(c.challenger)}
+                        </span>
+                      </Td>
+                      <Td>
+                        {c.succeeded === true && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400">Upheld</span>
+                        )}
+                        {c.succeeded === false && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/15 text-red-400">Rejected</span>
+                        )}
+                        {c.succeeded === null && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-400">Pending</span>
+                        )}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {slashes.length > 0 && (
+            <div className="mt-4 overflow-x-auto rounded-xl border border-zinc-800">
+              <p className="text-xs text-zinc-500 px-4 pt-3 pb-2 border-b border-zinc-800">Recent Slashes</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
+                    <Th>Epoch</Th>
+                    <Th>Type</Th>
+                    <Th>Offender</Th>
+                    <Th>Slash Amount</Th>
+                    <Th>Fisherman Reward</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {slashes.map((s) => (
+                    <tr
+                      key={`${s.epochId}-${s.challengeType}-${s.offender}`}
+                      className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/60 transition-colors"
+                    >
+                      <Td>
+                        <Link
+                          href={`/epochs/${s.epochId}`}
+                          className="font-mono text-teal-400 hover:text-teal-300 hover:underline"
+                        >
+                          #{s.epochId}
+                        </Link>
+                      </Td>
+                      <Td>{CHALLENGE_TYPE_LABEL[s.challengeType] ?? s.challengeType}</Td>
+                      <Td>
+                        <Link
+                          href={`/reporters/${s.offender}`}
+                          className="font-mono text-red-400 hover:underline"
+                        >
+                          {truncateAddr(s.offender)}
+                        </Link>
+                      </Td>
+                      <Td><span className="font-mono">{formatVayu(s.slashAmount)} VAYU</span></Td>
+                      <Td><span className="font-mono text-teal-400">{formatVayu(s.fishermanReward)} VAYU</span></Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* ── Relays table ─────────────────────────────────────────────────── */}
+        <section>
+          <SectionHeading>Registered Relays</SectionHeading>
+          {relays.length === 0 ? (
+            <EmptyState message="No relays indexed yet." />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-zinc-800">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
+                    <Th>Address</Th>
+                    <Th>Stake</Th>
+                    <Th>Epochs Committed</Th>
+                    <Th>Status</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relays.map((r) => (
+                    <tr
+                      key={r.address}
+                      className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/60 transition-colors"
+                    >
+                      <Td>
+                        <span className="font-mono text-zinc-300">
+                          {truncateAddr(r.address)}
+                        </span>
+                      </Td>
+                      <Td>
+                        <span className="font-mono">
+                          {formatVayu(r.stake)} VAYU
+                        </span>
+                      </Td>
+                      <Td>{r.epochsCommitted}</Td>
+                      <Td>
+                        {r.isActive ? (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-500/20 text-zinc-500">
+                            Inactive
                           </span>
                         )}
                       </Td>

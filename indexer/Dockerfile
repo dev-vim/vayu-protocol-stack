@@ -7,5 +7,5 @@ RUN npm ci
 COPY . .
 EXPOSE 42069
 # Invoke ponder directly to bypass the npm prestart script,
-# which requires .env and pg_isready — both are handled by docker-compose.
+# which requires .env.local and pg_isready — both are handled by docker-compose.
 CMD ["node_modules/.bin/ponder", "start"]

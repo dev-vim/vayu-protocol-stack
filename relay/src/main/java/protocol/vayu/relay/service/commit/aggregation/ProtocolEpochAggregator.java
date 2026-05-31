@@ -187,6 +187,32 @@ public class ProtocolEpochAggregator implements EpochAggregator {
 
         BigInteger cellBudget = rewardBudget.divide(BigInteger.valueOf(activeCells));
 
+        // Pre-fetch stakes for every reporter that has a positive score in any active cell.
+        // This avoids N×M eth_call round-trips (one per reporter per cell) and collapses
+        // the RPC fan-out to at most N unique reporters per epoch commit.
+        Set<String> scoredReporters = new LinkedHashSet<>();
+        for (CellAggregate cell : cells) {
+            if (!cell.active()) continue;
+            for (ReporterScore rs : cell.reporterScores()) {
+                if (Math.round(rs.score() * SCORE_PRECISION) > 0) {
+                    scoredReporters.add(rs.reporter());
+                }
+            }
+        }
+        Map<String, BigInteger> stakes = new HashMap<>();
+        for (String reporter : scoredReporters) {
+            try {
+                stakes.put(reporter, stakeWeightProvider.stakeOf(reporter));
+            } catch (StakeQueryException e) {
+                // Fail-open at the epoch level: a single reporter's stake query failure
+                // should not prevent the entire epoch from committing. Use weight=1 so
+                // the reporter still participates but with minimal influence.
+                LOG.warn("epoch {}: stake query failed for {}, using fallback weight 1. Cause: {}",
+                        epochId, reporter, e.getMessage());
+                stakes.put(reporter, BigInteger.ONE);
+            }
+        }
+
         List<ReporterReward> rewards = new ArrayList<>();
         for (CellAggregate cell : cells) {
             if (!cell.active() || cell.reporterScores().isEmpty()) continue;
@@ -199,7 +225,7 @@ public class ProtocolEpochAggregator implements EpochAggregator {
             for (ReporterScore rs : cell.reporterScores()) {
                 long scoreFixed = Math.round(rs.score() * SCORE_PRECISION);
                 if (scoreFixed <= 0) continue;
-                BigInteger stake = stakeWeightProvider.stakeOf(rs.reporter());
+                BigInteger stake = stakes.getOrDefault(rs.reporter(), BigInteger.ONE);
                 BigInteger weight = BigInteger.valueOf(scoreFixed).multiply(stake);
                 weightByReporter.put(rs.reporter(), weight);
                 totalWeight = totalWeight.add(weight);

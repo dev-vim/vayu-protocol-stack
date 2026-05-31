@@ -243,6 +243,101 @@ class ProtocolEpochAggregatorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Phase 3: stake query resilience
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void stakeQueryFailureForOneReporterShouldUseFallbackWeightOne() {
+        // Reporter 2's stake query throws; it should still receive a reward but
+        // with weight=1 rather than the 1000 of its peers.
+        String r1 = "0x1111111111111111111111111111111111111111";
+        String r2 = "0x2222222222222222222222222222222222222222";
+        String r3 = "0x3333333333333333333333333333333333333333";
+
+        StakeWeightProvider flaky = reporter -> {
+            if (reporter.equals(r2)) throw new StakeQueryException("rpc timeout");
+            return BigInteger.valueOf(1000);
+        };
+        ProtocolEpochAggregator agg = new ProtocolEpochAggregator(
+                relayProperties(), flaky, new InMemoryPenaltyTracker());
+
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading(r1, "0x0882830a1fffffff", 100),
+                reading(r2, "0x0882830a1fffffff", 100),
+                reading(r3, "0x0882830a1fffffff", 100)
+        );
+
+        EpochAggregate result = agg.aggregate(EPOCH_ID, readings);
+
+        // All three reporters get rewards — none are dropped
+        assertEquals(3, result.rewards().size());
+
+        // Reporter 2 (weight=1) should earn far less than reporters 1 and 3 (weight=1000)
+        BigInteger rewardR1 = rewardFor(result, r1);
+        BigInteger rewardR2 = rewardFor(result, r2);
+        assertTrue(rewardR2.compareTo(rewardR1) < 0,
+                "Reporter with fallback weight should earn less than a reporter with full stake");
+    }
+
+    @Test
+    void allStakeQueriesFailingShouldProduceEqualRewards() {
+        // When every stake query throws, all reporters fall back to weight=1 (uniform),
+        // so epoch rewards should be split evenly — same outcome as UniformStakeWeightProvider.
+        String r1 = "0x1111111111111111111111111111111111111111";
+        String r2 = "0x2222222222222222222222222222222222222222";
+        String r3 = "0x3333333333333333333333333333333333333333";
+
+        StakeWeightProvider alwaysFailing = reporter -> { throw new StakeQueryException("rpc down"); };
+
+        ProtocolEpochAggregator failingAgg = new ProtocolEpochAggregator(
+                relayProperties(), alwaysFailing, new InMemoryPenaltyTracker());
+        ProtocolEpochAggregator uniformAgg = new ProtocolEpochAggregator(
+                relayProperties(), new UniformStakeWeightProvider(), new InMemoryPenaltyTracker());
+
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading(r1, "0x0882830a1fffffff", 100),
+                reading(r2, "0x0882830a1fffffff", 100),
+                reading(r3, "0x0882830a1fffffff", 100)
+        );
+
+        EpochAggregate failingResult = failingAgg.aggregate(EPOCH_ID, readings);
+        EpochAggregate uniformResult = uniformAgg.aggregate(EPOCH_ID, readings);
+
+        assertEquals(uniformResult.rewards().size(), failingResult.rewards().size());
+
+        BigInteger totalFailing = failingResult.rewards().stream()
+                .map(ReporterReward::amount).reduce(BigInteger.ZERO, BigInteger::add);
+        BigInteger totalUniform = uniformResult.rewards().stream()
+                .map(ReporterReward::amount).reduce(BigInteger.ZERO, BigInteger::add);
+
+        // Total reward budgets must match (rounding drift at most 1 wei per reporter)
+        assertTrue(totalFailing.subtract(totalUniform).abs().longValue() <= 3,
+                "Total rewards with fallback weights should match uniform-stake total within rounding");
+    }
+
+    @Test
+    void stakeQueryFailureShouldNotAbortEpochCommit() {
+        // A StakeQueryException during allocateRewards must not propagate out — the epoch
+        // commit should complete and produce a non-empty aggregate.
+        StakeWeightProvider alwaysFailing = reporter -> { throw new StakeQueryException("rpc down"); };
+        ProtocolEpochAggregator agg = new ProtocolEpochAggregator(
+                relayProperties(), alwaysFailing, new InMemoryPenaltyTracker());
+
+        List<ReadingSubmissionRequest> readings = List.of(
+                reading("0x1111111111111111111111111111111111111111", "0x0882830a1fffffff", 100),
+                reading("0x2222222222222222222222222222222222222222", "0x0882830a1fffffff", 100),
+                reading("0x3333333333333333333333333333333333333333", "0x0882830a1fffffff", 100)
+        );
+
+        EpochAggregate result = agg.aggregate(EPOCH_ID, readings);
+
+        assertNotNull(result);
+        assertFalse(result.rewards().isEmpty());
+        assertNotNull(result.dataRoot());
+        assertNotNull(result.rewardRoot());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Penalty tracking
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -330,8 +425,15 @@ class ProtocolEpochAggregatorTest {
                 3, 50, EPOCH_BUDGET);
         RelayProperties.Eip712 eip712 = new RelayProperties.Eip712("VayuProtocol", "1", 84532,
                 "0x0000000000000000000000000000000000000000");
-        RelayProperties.Security security = new RelayProperties.Security(false, false, eip712);
+        RelayProperties.Security security = new RelayProperties.Security(false, false, eip712, null);
         return new RelayProperties(epoch, validation, security, null, null);
+    }
+
+    private static BigInteger rewardFor(EpochAggregate aggregate, String reporter) {
+        return aggregate.rewards().stream()
+                .filter(r -> r.reporter().equals(reporter))
+                .map(ReporterReward::amount)
+                .reduce(BigInteger.ZERO, BigInteger::add);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
