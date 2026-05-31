@@ -4,17 +4,72 @@
    <img src="docs/logo.png" height="400" alt="Vayu Protocol" />
 </p>
 
-Vayu is a DePIN (decentralised physical infrastructure) network for air quality monitoring. Edge devices submit cryptographically-signed AQI sensor readings to a relay, which aggregates them per-epoch, pins a data blob to IPFS, and commits a settlement transaction on-chain. A Ponder indexer watches the chain events and exposes a GraphQL API; a Next.js dashboard renders the indexed data.
-
-```
-Edge Device → Relay (write path) → EVM chain + IPFS
-                                        ↓
-                               Ponder Indexer (GraphQL)
-                                        ↓
-                               Dashboard (Next.js)
-```
+Vayu is a [DePIN](https://en.wikipedia.org/wiki/Decentralized_physical_infrastructure_network) stack for air quality monitoring. Edge devices submit cryptographically-signed AQI sensor readings to a relay, which aggregates them per-epoch, pins a data blob to IPFS, and commits a settlement transaction on-chain. A Ponder indexer watches the chain events and exposes a GraphQL API; a Next.js dashboard renders the indexed data.
 
 ## Stack Overview
+
+```
+                          ┌─────────────────────────────────────────┐
+                          │  Edge Device                            │
+                          │  Submits signed AQI readings (EIP-712)  │
+                          └───────────────────┬─────────────────────┘
+                                              │  write path
+                                              ▼
+                          ┌─────────────────────────────────────────┐
+                          │  Relay  (Spring Boot)                   │
+                          │  Validates, buffers, aggregates reads;  │
+                          │  pins epoch blob to IPFS; commit epoch  │
+                          └──────────┬──────────────────┬───────────┘
+                           pin blob  │                  │  commit epoch
+                                     ▼                  ▼
+                          ┌─────────────────┐  ┌────────────────────┐
+                          │  IPFS           │  │  EVM Chain         │
+                          │  Stores epoch   │  │  Settlement,       │
+                          │  JSON blobs     │  │  rewards & token   │
+                          └────────┬────────┘  └─────────┬──────────┘
+                          fetch    │                     │  read path
+                          blob     ▼                     ▼
+                          ┌─────────────────┐  ┌────────────────────┐
+                          │  IPFS Sidecar   │  │  Ponder Indexer    │
+                          │  (tsx)          │  │  (Ponder)          │
+                          │  Hydrates per-  │  │  Indexes events;   │
+                          │  cell rows      │  │  serves GraphQL    │
+                          └────────┬────────┘  └─────────┬──────────┘
+                                   │  write              │  write
+                                   └──────────┬──────────┘
+                                              ▼
+                                   ┌────────────────────┐
+                                   │  PostgreSQL        │
+                                   │  Indexed epochs,   │
+                                   │  readings & cells  │
+                                   └──────────┬─────────┘
+                                              │  GraphQL
+                                              ▼
+                                   ┌────────────────────┐
+                                   │  Dashboard         │
+                                   │  (Next.js)         │
+                                   │  Renders epochs,   │
+                                   │  reporters, stats  │
+                                   └────────────────────┘
+```
+
+
+
+
+Component-level documentation is linked at the bottom of this file.
+
+---
+
+
+## Local Deployment
+
+### Prerequisites
+
+- **Docker Engine 24+** (or Docker Desktop) with the Compose v2 plugin (`docker compose`)
+- **4 GB+ RAM** available to Docker
+- No other local dependencies — everything runs inside containers
+
+---
 
 | Service | Technology | Port(s) |
 |---|---|---|
@@ -28,21 +83,9 @@ Edge Device → Relay (write path) → EVM chain + IPFS
 | `dashboard` | Next.js 15 / React 19 | 3000 |
 | `prometheus` | Prometheus | 9090 |
 
-Component-level documentation is linked at the bottom of this file.
-
 ---
 
-## Prerequisites
-
-- **Docker Engine 24+** (or Docker Desktop) with the Compose v2 plugin (`docker compose`)
-- **4 GB+ RAM** available to Docker
-- No other local dependencies — everything runs inside containers
-
----
-
-## Local Deployment
-
-### 1. Start the full stack
+#### 1. Start the full stack
 
 ```bash
 docker compose up --build
@@ -50,7 +93,7 @@ docker compose up --build
 
 The first run builds the relay (Maven), indexer, and dashboard images. Subsequent starts reuse the cache and are significantly faster.
 
-### 2. Startup sequence
+#### 2. Startup sequence
 
 Services come up in dependency order. The full stack is ready in roughly 2–3 minutes:
 
@@ -63,7 +106,7 @@ Services come up in dependency order. The full stack is ready in roughly 2–3 m
 7. **sidecar** — polls Ponder's database for new epoch commits, fetches blobs from IPFS
 8. **dashboard** — Next.js production server starts
 
-### 3. Confirm everything is up
+#### 3. Confirm everything is up
 
 ```bash
 docker compose ps
@@ -84,9 +127,9 @@ open http://localhost:3000   # or visit in a browser
 
 ---
 
-## Testing the Stack
+### Testing the Stack
 
-### Submit readings
+#### Submit readings
 
 The Compose stack enables EIP-712 signature verification by default. Use the reporter
 simulator to generate and submit properly signed readings:
@@ -100,7 +143,7 @@ python simulate.py
 See [reporter-simulator/README.md](reporter-simulator/README.md) for all options including
 multi-round simulation, tamper testing, and fixture generation.
 
-### Watch the relay commit
+#### Watch the relay commit
 
 The relay accumulates readings during each 60-second epoch window and commits at the
 boundary. Follow the relay logs:
@@ -111,7 +154,7 @@ docker compose logs relay -f
 
 Look for log lines referencing `commitEpoch` and an IPFS CID.
 
-### View the dashboard
+#### View the dashboard
 
 Open [http://localhost:3000](http://localhost:3000). Once at least one epoch has been
 committed and indexed, the dashboard renders epoch history, reporter activity, and relay
@@ -119,10 +162,6 @@ statistics.
 
 See the component READMEs below for full API details, GraphQL queries, and on-chain
 verification commands.
-
----
-
-## Lifecycle Management
 
 ### Stop the stack (preserve data)
 
