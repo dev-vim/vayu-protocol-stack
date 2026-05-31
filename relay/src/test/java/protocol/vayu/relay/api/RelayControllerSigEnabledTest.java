@@ -12,6 +12,7 @@ import protocol.vayu.relay.service.ingestion.security.Eip712SignatureVerifier;
 import protocol.vayu.relay.service.ingestion.security.TestEip712Signer;
 
 import java.time.Instant;
+import java.util.Objects;
 
 import static org.hamcrest.Matchers.greaterThan;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -78,8 +79,8 @@ class RelayControllerSigEnabledTest {
         String signature = signer().sign(req, REPORTER_1_KEY);
 
         mockMvc.perform(post("/v1/readings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload(req, signature)))
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(payload(req, signature))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("accepted"));
     }
@@ -93,8 +94,8 @@ class RelayControllerSigEnabledTest {
         String signature = tamper(signer().sign(req, REPORTER_2_KEY));
 
         mockMvc.perform(post("/v1/readings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload(req, signature)))
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(payload(req, signature))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_request"));
     }
@@ -107,8 +108,8 @@ class RelayControllerSigEnabledTest {
         String signature = signer().sign(req, REPORTER_2_KEY); // wrong key for reporter-3
 
         mockMvc.perform(post("/v1/readings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload(req, signature)))
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(payload(req, signature))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_request"));
     }
@@ -130,8 +131,8 @@ class RelayControllerSigEnabledTest {
         String poisonSig = signer().sign(poisonReq, REPORTER_2_KEY);
 
         mockMvc.perform(post("/v1/readings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload(poisonReq, poisonSig)))
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(payload(poisonReq, poisonSig))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_request"));
 
@@ -140,8 +141,8 @@ class RelayControllerSigEnabledTest {
         String legitSig = signer().sign(legitReq, REPORTER_4_KEY);
 
         mockMvc.perform(post("/v1/readings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload(legitReq, legitSig)))
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(payload(legitReq, legitSig))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("accepted"));
     }
@@ -155,10 +156,10 @@ class RelayControllerSigEnabledTest {
         long now = Instant.now().getEpochSecond();
         ReadingSubmissionRequest req = unsignedRequest(REPORTER_5_ADDR, now);
         String signature = signer().sign(req, REPORTER_5_KEY);
-        String body = payload(req, signature);
+        String body = Objects.requireNonNull(payload(req, signature));
 
         mockMvc.perform(post("/v1/readings")
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                         .content(body))
                 .andExpect(status().isOk());
 
@@ -172,14 +173,14 @@ class RelayControllerSigEnabledTest {
                 "0x" + "0".repeat(130)
         );
         String sig2 = signer().sign(req2, REPORTER_5_KEY);
-        String body2 = payload(req2, sig2);
+        String body2 = Objects.requireNonNull(payload(req2, sig2));
 
         mockMvc.perform(post("/v1/readings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body2))
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                        .content(Objects.requireNonNull(body2)))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error").value("rate_limited"))
-                .andExpect(jsonPath("$.retryAfter").value(greaterThan(0)));
+                .andExpect(jsonPath("$.retryAfter").value(Objects.requireNonNull(greaterThan(0))));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

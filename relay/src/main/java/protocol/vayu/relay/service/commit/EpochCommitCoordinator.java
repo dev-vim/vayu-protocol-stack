@@ -4,7 +4,6 @@ import protocol.vayu.relay.api.dto.ReadingSubmissionRequest;
 import protocol.vayu.relay.config.RelayProperties;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregate;
 import protocol.vayu.relay.service.commit.aggregation.EpochAggregator;
-import protocol.vayu.relay.service.commit.EpochIngressWindow;
 import protocol.vayu.relay.service.RelayMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -393,12 +393,6 @@ class ReadingIngestionServiceTest {
     @Test
     void ingestShouldAcceptSameReporterDifferentCellsInSameEpoch() {
         InMemoryEpochIngressWindow store = new InMemoryEpochIngressWindow(new SimpleMeterRegistry());
-        ReadingIngestionService svc = new ReadingIngestionService(
-                relayProperties(false, false),
-                request -> true,
-                reporter -> true,
-                store
-        );
 
         // Verify enqueueIfNotSeen allows (reporter, epoch, cell1) and (reporter, epoch, cell2)
         // independently. We bypass the service-level rate limit by calling enqueueIfNotSeen
