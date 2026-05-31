@@ -185,4 +185,34 @@ class CachedStakeWeightProviderTest {
 
         assertThat(result).isEqualByComparingTo(BigInteger.ONE);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Stale cache bounding
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void staleCacheShouldEvictOldEntriesWhenMaxSizeExceeded() {
+        // maxSize=1: stale cache holds at most one reporter entry.
+        // TTL=0: hot cache expires immediately, forcing the cold path on every call.
+        RelayProperties.StakeCache tinyConfig = new RelayProperties.StakeCache(0, 1, true, 50, 30, 10);
+        AtomicInteger callCount = new AtomicInteger();
+        // First two calls succeed (populating stale for reporter1 then reporter2); all subsequent calls throw.
+        StakeWeightProvider flaky = reporter -> {
+            if (callCount.incrementAndGet() <= 2) return STAKE_100;
+            throw new StakeQueryException("rpc down");
+        };
+        CachedStakeWeightProvider provider = new CachedStakeWeightProvider(flaky, tinyConfig);
+
+        String reporter1 = "0x1111111111111111111111111111111111111111";
+        String reporter2 = "0x2222222222222222222222222222222222222222";
+
+        provider.stakeOf(reporter1);  // stale cache: {reporter1 → 100}
+        provider.stakeOf(reporter2);  // at capacity → reporter1 evicted; stale cache: {reporter2 → 100}
+        provider.cleanUpStaleCacheForTest(); // force Caffeine maintenance (eviction is otherwise async)
+
+        // Delegate now throws; reporter1's stale entry was evicted → fail-open returns BigInteger.ONE.
+        BigInteger result = provider.stakeOf(reporter1);
+
+        assertThat(result).isEqualByComparingTo(BigInteger.ONE);
+    }
 }

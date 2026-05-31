@@ -13,8 +13,8 @@ import org.springframework.stereotype.Component;
  *   <li>{@code vayu.readings.accepted} — counter, incremented on every successfully ingested reading.</li>
  *   <li>{@code vayu.readings.rejected} — counter with {@code reason} tag:
  *       {@code invalid_signature}, {@code duplicate}, {@code rate_limited},
- *       {@code no_stake}, {@code validation_error}, {@code stale_timestamp},
- *       {@code wrong_epoch}, {@code wrong_resolution}.</li>
+ *       {@code no_stake}, {@code stake_unavailable}, {@code validation_error},
+ *       {@code stale_timestamp}, {@code wrong_epoch}, {@code wrong_resolution}.</li>
  *   <li>{@code vayu.epoch.commits} — counter with {@code outcome} tag:
  *       {@code success}, {@code empty}, {@code failure}.</li>
  *   <li>{@code vayu.epoch.readings_drained} — distribution summary recording how many
@@ -39,6 +39,7 @@ public class RelayMetrics {
     private final Counter rejectedDuplicate;
     private final Counter rejectedRateLimited;
     private final Counter rejectedNoStake;
+    private final Counter rejectedStakeUnavailable;
     private final Counter rejectedValidationError;
     private final Counter rejectedStaleTimestamp;
     private final Counter rejectedWrongEpoch;
@@ -59,6 +60,7 @@ public class RelayMetrics {
         rejectedDuplicate        = rejectedCounter(registry, "duplicate");
         rejectedRateLimited      = rejectedCounter(registry, "rate_limited");
         rejectedNoStake          = rejectedCounter(registry, "no_stake");
+        rejectedStakeUnavailable = rejectedCounter(registry, "stake_unavailable");
         rejectedValidationError  = rejectedCounter(registry, "validation_error");
         rejectedStaleTimestamp   = rejectedCounter(registry, "stale_timestamp");
         rejectedWrongEpoch       = rejectedCounter(registry, "wrong_epoch");
@@ -79,8 +81,9 @@ public class RelayMetrics {
     public void recordRejectedInvalidSig()   { rejectedInvalidSignature.increment(); }
     public void recordRejectedDuplicate()    { rejectedDuplicate.increment(); }
     public void recordRejectedRateLimited()  { rejectedRateLimited.increment(); }
-    public void recordRejectedNoStake()      { rejectedNoStake.increment(); }
-    public void recordRejectedValidation()   { rejectedValidationError.increment(); }
+    public void recordRejectedNoStake()          { rejectedNoStake.increment(); }
+    public void recordRejectedStakeUnavailable() { rejectedStakeUnavailable.increment(); }
+    public void recordRejectedValidation()       { rejectedValidationError.increment(); }
     public void recordRejectedStaleTs()      { rejectedStaleTimestamp.increment(); }
     public void recordRejectedWrongEpoch()   { rejectedWrongEpoch.increment(); }
     public void recordRejectedWrongRes()     { rejectedWrongResolution.increment(); }

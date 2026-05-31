@@ -11,8 +11,6 @@ import protocol.vayu.relay.config.RelayProperties;
 
 import java.math.BigInteger;
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * {@link StakeWeightProvider} decorator that adds:
@@ -43,18 +41,24 @@ public class CachedStakeWeightProvider implements StakeWeightProvider {
     private final StakeWeightProvider delegate;
     /** Short-lived fresh cache (TTL eviction). */
     private final Cache<String, BigInteger> hotCache;
-    /** Last-known-good values, never evicted — used as fallback on RPC failure. */
-    private final ConcurrentMap<String, BigInteger> staleCache;
+    /**
+     * Last-known-good values — no TTL eviction (survives hot-cache expiry) but bounded to
+     * {@code maxSize} entries (LRU). Used as a fallback when the delegate is unavailable.
+     */
+    private final Cache<String, BigInteger> staleCache;
     private final CircuitBreaker circuitBreaker;
     private final boolean failOpen;
 
     public CachedStakeWeightProvider(StakeWeightProvider delegate, RelayProperties.StakeCache config) {
         this.delegate = delegate;
         this.failOpen = config.failOpen();
-        this.staleCache = new ConcurrentHashMap<>();
 
         this.hotCache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofSeconds(config.ttlSeconds()))
+                .maximumSize(config.maxSize())
+                .build();
+
+        this.staleCache = Caffeine.newBuilder()
                 .maximumSize(config.maxSize())
                 .build();
 
@@ -96,7 +100,7 @@ public class CachedStakeWeightProvider implements StakeWeightProvider {
     }
 
     private BigInteger handleFailure(String key, Exception cause) {
-        BigInteger stale = staleCache.get(key);
+        BigInteger stale = staleCache.getIfPresent(key);
         if (stale != null) {
             LOG.warn("stake RPC unavailable for {}, returning stale cached value {} wei. Cause: {}",
                     key, stale, cause.getMessage());
@@ -112,5 +116,10 @@ public class CachedStakeWeightProvider implements StakeWeightProvider {
             throw sqe;
         }
         throw new StakeQueryException("stake check failed for " + key, cause);
+    }
+
+    /** Forces synchronous Caffeine maintenance on the stale cache. For use in tests only. */
+    void cleanUpStaleCacheForTest() {
+        staleCache.cleanUp();
     }
 }

@@ -140,7 +140,7 @@ app.get("/reporters/:address/readings", async (c) => {
   }
 
   const limitParam = c.req.query("limit");
-  const limit = Math.min(parseInt(limitParam ?? "100", 10) || 100, 500);
+  const limit = Math.min(Math.max(1, parseInt(limitParam ?? "100", 10) || 100), 500);
 
   const sql = getRawSql();
 

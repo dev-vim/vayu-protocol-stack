@@ -11,6 +11,7 @@ import protocol.vayu.relay.service.ingestion.security.ReporterStakeChecker;
 import protocol.vayu.relay.service.ingestion.security.SignatureVerifier;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -105,7 +106,14 @@ public class ReadingIngestionService {
         catch (RelayApiException e) { relayMetrics.recordRejectedInvalidSig(); throw e; }
 
         try { validateReporterStake(request.reporter()); }
-        catch (RelayApiException e) { relayMetrics.recordRejectedNoStake(); throw e; }
+        catch (RelayApiException e) {
+            if (e.status() == HttpStatus.SERVICE_UNAVAILABLE) {
+                relayMetrics.recordRejectedStakeUnavailable();
+            } else {
+                relayMetrics.recordRejectedNoStake();
+            }
+            throw e;
+        }
 
         String replayKey = request.reporter().toLowerCase()
                 + ":" + request.epochId()

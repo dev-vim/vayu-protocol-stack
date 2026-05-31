@@ -658,5 +658,23 @@ class ReadingIngestionServiceTest {
         long now = Instant.now().getEpochSecond();
         assertThrows(RelayApiException.class, () -> svc.ingest(validRequest("0xaaaa000000000000000000000000000000000009", now)));
         assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "no_stake").count());
+        assertEquals(0.0, registry.counter("vayu.readings.rejected", "reason", "stake_unavailable").count());
+    }
+
+    @Test
+    void metricsShouldRecordStakeUnavailableWhenStakeRpcFails() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RelayMetrics metrics = new RelayMetrics(registry);
+        ReadingIngestionService svc = new ReadingIngestionService(
+                relayProperties(false, true),
+                request -> true,
+                reporter -> { throw new protocol.vayu.relay.service.commit.aggregation.StakeQueryException("rpc down"); },
+                new InMemoryEpochIngressWindow(new SimpleMeterRegistry()),
+                metrics);
+
+        long now = Instant.now().getEpochSecond();
+        assertThrows(RelayApiException.class, () -> svc.ingest(validRequest("0xaaaa000000000000000000000000000000000009", now)));
+        assertEquals(0.0, registry.counter("vayu.readings.rejected", "reason", "no_stake").count());
+        assertEquals(1.0, registry.counter("vayu.readings.rejected", "reason", "stake_unavailable").count());
     }
 }

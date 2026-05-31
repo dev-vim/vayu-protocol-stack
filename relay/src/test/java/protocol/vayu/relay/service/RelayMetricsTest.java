@@ -31,13 +31,14 @@ class RelayMetricsTest {
         metrics.recordRejectedDuplicate();
         metrics.recordRejectedRateLimited();
         metrics.recordRejectedNoStake();
+        metrics.recordRejectedStakeUnavailable();
         metrics.recordRejectedValidation();
         metrics.recordRejectedStaleTs();
         metrics.recordRejectedWrongEpoch();
         metrics.recordRejectedWrongRes();
 
         for (String reason : List.of(
-                "invalid_signature", "duplicate", "rate_limited", "no_stake",
+                "invalid_signature", "duplicate", "rate_limited", "no_stake", "stake_unavailable",
                 "validation_error", "stale_timestamp", "wrong_epoch", "wrong_resolution")) {
             assertEquals(1.0,
                     registry.counter("vayu.readings.rejected", "reason", reason).count(),

@@ -97,7 +97,12 @@ public class ChainConfig {
                 .build();
         Web3j web3j = Web3j.build(new HttpService(props.chain().rpcUrl(), httpClient));
         StakeWeightProvider raw = new Web3jStakeWeightProvider(web3j, props.chain().settlementAddress());
-        return new CachedStakeWeightProvider(raw, props.security().stakeCache());
+        RelayProperties.StakeCache cacheConfig = props.security().stakeCache();
+        if (cacheConfig == null) {
+            throw new IllegalStateException(
+                    "relay.security.stake-cache must be configured when stake-check-enabled=true");
+        }
+        return new CachedStakeWeightProvider(raw, cacheConfig);
     }
 
     /**
