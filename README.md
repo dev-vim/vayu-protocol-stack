@@ -1,5 +1,9 @@
 # Vayu Protocol
 
+<p align="center">
+   <img src="docs/logo.png" height="400" alt="Vayu Protocol" />
+</p>
+
 Vayu is a DePIN (decentralised physical infrastructure) network for air quality monitoring. Edge devices submit cryptographically-signed AQI sensor readings to a relay, which aggregates them per-epoch, pins a data blob to IPFS, and commits a settlement transaction on-chain. A Ponder indexer watches the chain events and exposes a GraphQL API; a Next.js dashboard renders the indexed data.
 
 ```
