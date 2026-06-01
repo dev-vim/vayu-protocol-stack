@@ -1,8 +1,7 @@
 # Vayu Reporter Simulator
 
 Python script that generates EIP-712 signed AQI readings and submits them to the relay.
-Useful for local end-to-end testing, load simulation, and generating fixture payloads for
-Spring integration tests.
+Useful for local end-to-end testing, load simulation, and generating signed payload fixtures.
 
 All private keys are Anvil's deterministic test accounts — **never use in production**.
 
@@ -60,18 +59,17 @@ If the relay unexpectedly accepts a tampered signature the output flags it:
 reporter-1 @ 0x0882830a1fffffff  aqi=57  → ✗ UNEXPECTED ACCEPT — relay should have rejected tampered signature!
 ```
 
-### Generate signed fixture payloads for Spring integration tests
+### Generate signed fixture payloads
 
 ```bash
 python simulate.py \
   --chain-id 31337 \
   --verifying-contract 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0 \
-  --output-fixtures ../relay/src/test/resources/fixtures/signed_readings.json
+  --output-fixtures signed_readings.json
 ```
 
 `--output-fixtures` implies `--dry-run` — no readings are submitted. The output file
-contains a JSON array of fully signed payloads that can be loaded directly in a Spring
-`@ActiveProfiles("sig-enabled")` test.
+contains a JSON array of fully signed payloads.
 
 ## Options
 
@@ -85,6 +83,7 @@ contains a JSON array of fully signed payloads that can be loaded directly in a 
 | `--cells` | `2` | H3 cells per reporter per round (1–6) |
 | `--rounds` | `1` | Number of submission rounds |
 | `--interval` | `30` | Seconds to wait between rounds |
+| `--rate-limit-window` | `300` | Assumed relay rate-limit window in seconds (`RELAY_VALIDATION_RATE_LIMIT_WINDOW_SECONDS`). Used to warn when `--interval` is shorter than the window. Local compose uses `30`; production default is `300`. |
 | `--tamper` | off | Flip last byte of every signature before submitting |
 | `--dry-run` | off | Sign readings but do not submit |
 | `--output-fixtures FILE` | — | Write signed payloads to JSON file (implies `--dry-run`) |

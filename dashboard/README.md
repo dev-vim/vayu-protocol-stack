@@ -9,8 +9,8 @@ API and visualises on-chain activity for the Vayu DePIN air quality network.
 |---|---|
 | Framework | Next.js 15 (App Router, server components) |
 | Styling | Tailwind CSS v4 |
-| Data | Ponder GraphQL (`/graphql`) — `epochss`, `reporterss`, `relayss` |
-| Rendering | Server-side, `cache: "no-store"` — fresh data on every request |
+| Data | Ponder GraphQL (`/graphql`) — `epochss`, `reporterss`, `relayss`, `challengess`, `slashess` |
+| Rendering | Server-side ISR, `revalidate = 60` — page regenerated at most every 60 s; underlying fetch uses `cache: "no-store"` |
 
 ---
 
@@ -18,9 +18,12 @@ API and visualises on-chain activity for the Vayu DePIN air quality network.
 
 | Section | Data |
 |---|---|
-| **Stat cards** | Latest epoch ID, epochs committed, reporter count, active relay count |
+| **Stat cards** | Latest epoch (ID + commit time), total readings across last 15 epochs, VAYU distributed, active relay count |
+| **Cell Air-Quality Map** | H3 hex map of the latest epoch's cells, colour-coded by median AQI |
 | **Recent Epochs** | Last 15 epochs — relay, active cells, readings, total reward, IPFS status badge, commit time |
-| **Top Reporters** | Top 20 reporters by stake — stake, readings, rewards earned, claimed, last epoch, slashed status |
+| **Top Reporters** | Top 20 reporters by stake — stake, readings, rewards earned, unclaimed, last epoch, slashed status |
+| **Challenges & Disputes** | Last 10 challenges — epoch, type, challenger, outcome (Upheld / Rejected / Pending); nested Recent Slashes sub-table |
+| **Registered Relays** | All indexed relays — address, stake, epochs committed, active status |
 
 ---
 
