@@ -36,6 +36,8 @@ All runtime values are controlled via environment variables. Defaults are produc
 | `RELAY_SECURITY_STAKE_CHECK_ENABLED` | `false` | Reject reporters with no on-chain stake |
 | `RELAY_SECURITY_EIP712_CHAIN_ID` | `84532` | Chain ID used in EIP-712 domain separator |
 | `RELAY_SECURITY_EIP712_VERIFYING_CONTRACT` | `0x000…` | Contract address in EIP-712 domain |
+| `RELAY_SECURITY_EIP712_DOMAIN_NAME` | `VayuProtocol` | EIP-712 domain name (must match the reporter simulator) |
+| `RELAY_SECURITY_EIP712_DOMAIN_VERSION` | `1` | EIP-712 domain version |
 | **Stake Cache** _(requires `RELAY_SECURITY_STAKE_CHECK_ENABLED=true`)_ | | |
 | `RELAY_SECURITY_STAKE_CACHE_TTL_SECONDS` | `300` | How long a fetched stake value remains fresh (seconds) |
 | `RELAY_SECURITY_STAKE_CACHE_MAX_SIZE` | `10000` | Maximum number of reporter entries in the cache |

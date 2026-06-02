@@ -229,9 +229,12 @@ Runs Vitest across all test files. No database or network connections required �
 fetches are mocked.
 
 ```
- ✓ test/lib/epochs.test.ts        (9 tests)
- ✓ test/sidecar/blob.schema.test.ts  (20 tests)
- ✓ test/sidecar/ipfs.test.ts       (5 tests)
+ ✓ test/api/index.test.ts              (13 tests)
+ ✓ test/lib/epochs.test.ts             (9 tests)
+ ✓ test/sidecar/blob.schema.test.ts    (22 tests)
+ ✓ test/sidecar/index.test.ts          (5 tests)
+ ✓ test/sidecar/ipfs.test.ts           (5 tests)
+ ✓ test/sidecar/processor.test.ts      (11 tests)
 ```
 
 ---
