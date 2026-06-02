@@ -1,16 +1,27 @@
 # Vayu Protocol
 
 <p align="center">
-   <img src="docs/logo.png" height="400" alt="Vayu Protocol" />
+   <img src="docs/images/logo.png" height="400" alt="Vayu Protocol" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/dev-vim/vayu-protocol-stack/blob/main/LICENSE"><img src="https://img.shields.io/github/license/dev-vim/vayu-protocol-stack" alt="License: MIT" /></a>
+  <a href="https://github.com/dev-vim/vayu-protocol-stack/commits"><img src="https://img.shields.io/github/last-commit/dev-vim/vayu-protocol-stack" alt="Last commit" /></a>
+  <a href="https://github.com/dev-vim/vayu-protocol-stack/issues"><img src="https://img.shields.io/github/issues/dev-vim/vayu-protocol-stack" alt="Open issues" /></a>
+  <a href="https://github.com/dev-vim/vayu-protocol-stack/actions/workflows/ci.yml"><img src="https://github.com/dev-vim/vayu-protocol-stack/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/Solidity-0.8.24-363636?logo=solidity" alt="Solidity 0.8.24" />
+  <img src="https://img.shields.io/badge/Spring_Boot-3-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot 3" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose" />
+  <img src="https://img.shields.io/badge/network-local%20devnet-orange" alt="Network: local devnet" />
 </p>
 
 Vayu is a [DePIN](https://en.wikipedia.org/wiki/Decentralized_physical_infrastructure_network) stack for air quality monitoring. Edge devices submit cryptographically-signed AQI sensor readings to a relay, which aggregates them per-epoch, pins a data blob to IPFS, and commits a settlement transaction on-chain. A Ponder indexer watches the chain events and exposes a GraphQL API; a Next.js dashboard renders the indexed data.
 
 ## Motivation
 
-Air quality data today is produced and controlled by governments and centralised agencies — you must accept their figures as ground truth with no independent way to verify or dispute them. This is a single point of failure that is easily weaponised - there is no audit trail, no way to prove tampering, and no alternative source to appeal to.
+Air quality data today is produced and controlled by centralised agencies - you must accept their figures as ground truth with no independent way to verify or dispute them. This is a single point of failure that can be easily weaponised - there is no audit trail, no way to prove tampering, and no alternative source to appeal to.
 
-DePIN offers a *trustless* alternative: anyone can run a sensor, all readings are cryptographically signed by the submitting device, and the aggregate truth is committed on-chain — no central authority decides what the air quality was.
+DePIN offers a *trustless* alternative: anyone can run a sensor, all readings are cryptographically signed by the submitting device, and the aggregate truth is committed on-chain - no central authority decides what the air quality was.
 
 Vayu implements this model as a complete stack - Reporters stake VAYU tokens to participate and submit EIP-712 signed readings each epoch. The relay service validates, aggregates, and scores each reading against cell medians, builds Merkle reward allocations, pins the epoch blob to IPFS, and settles on-chain. Reporters claim rewards trustlessly with Merkle proofs.
 
@@ -18,19 +29,18 @@ Vayu implements this model as a complete stack - Reporters stake VAYU tokens to 
 
 > _Run `docker compose up --build` and open [http://localhost:3000](http://localhost:3000) to see the dashboard live._
 
-<!-- Uncomment and replace paths once screenshots are captured:
-![Dashboard overview](docs/screenshots/overview.png)
-![Epoch detail](docs/screenshots/epoch-detail.png)
--->
+![Dashboard overview](docs/images/dashboard_landing.png)
+
+![Epoch detail](docs/images/dashboard_epoch_data.png)
 
 ## Highlights
 
 - **EIP-712 structured-data signing** - all reporter readings are EIP-712 typed-data signed; the relay verifies signatures before accepting and the settlement contract anchors the aggregate data root on-chain
-- **Optimistic reward proofs** - the relay computes reward allocations off-chain and commits them as a Merkle root; because the raw readings are pinned to IPFS and the scoring code is open source, anyone can re-derive the expected roots and raise a fisherman challenge if they diverge — reporters then claim independently with on-chain Merkle inclusion proofs
+- **Optimistic reward proofs** - the relay computes reward allocations off-chain and commits them as a Merkle root; because the raw readings are pinned to IPFS, anyone can re-derive the expected roots and raise a fisherman challenge if they diverge - reporters then claim independently with on-chain Merkle inclusion proofs
 - **On-chain settlement in Solidity** - staking, slashing, per-epoch Merkle settlement, and a fisherman challenge mechanism tested with Foundry invariant tests on the core contract
 - **Resilient relay ingestion** - Resilience4j circuit breaker + Caffeine TTL cache on the stake RPC; ingestion degrades gracefully during node outages rather than rejecting all submissions
 - **Dual-process indexer** - Ponder indexes on-chain events; a separate IPFS sidecar hydrates off-chain blob data into the same PostgreSQL schema, each with independent failure domains
-- **Cross-stack test coverage** — Foundry invariant tests, Vitest for the indexer (6 test files), and Spring MockMvc integration tests that sign requests live with a test EIP-712 signer using Anvil deterministic keys
+- **Cross-stack test coverage** - Foundry invariant tests, Vitest for the indexer (6 test files), and Spring MockMvc integration tests that sign requests live with a test EIP-712 signer using Anvil deterministic keys
 
 ## Stack Overview
 
@@ -97,6 +107,30 @@ Each epoch proceeds in five steps:
 4. **Indexing** - Ponder picks up the `EpochCommitted` event and writes a row to PostgreSQL. The IPFS sidecar polls for `PENDING` epochs, fetches the blob, validates it against a Zod schema, and hydrates the `cell_epochs` and `readings` tables for analytics.
 
 5. **Claiming** - Reporters call `VayuEpochSettlement.claimReward()` with a Merkle proof. The contract verifies the proof against the stored reward root and transfers VAYU from the `VayuRewards` escrow.
+
+## Token Economics
+
+**Supply and emission.** The protocol allocates 60 million VAYU to an immutable, non-upgradeable `VayuRewards` escrow. It releases a fixed budget of ~685 VAYU per epoch, distributed evenly across 87,600 epochs (10 years at one epoch per hour). The emission schedule is a protocol guarantee - the escrow contract has no owner and cannot be paused or adjusted.
+
+**Participation requirements.** Reporters must stake a minimum of 100 VAYU; relays must stake a minimum of 10,000 VAYU. Both are subject to unbonding cooldowns (7 days for reporters, 14 days for relays) to prevent stake-and-exit before a challenge window closes.
+
+**Epoch reward distribution.** The relay takes a 2% fee from each epoch budget (~14 VAYU). The remaining ~671 VAYU is distributed pro-rata across reporters whose readings fall within the cell median tolerance band. A cell must have at least 3 independent reporters to qualify for rewards; cells with fewer readings receive nothing, preventing single-device cells from extracting rewards uncontested.
+
+**Slashing.** Stake is at risk from multiple vectors:
+
+| Offence | Subject | Slash rate |
+|---|---|---|
+| 10 consecutive zero-score epochs | Reporter | 5% |
+| Spatial anomaly (fisherman challenge) | Reporter | 20% |
+| Duplicate location in same epoch | Reporter | 50% |
+| Reward computation fraud | Relay | 30% |
+| Penalty list fraud | Relay | 30% |
+| Data integrity failure | Relay | 30% |
+| Censorship | Relay | 20% |
+
+**Fisherman incentive.** Half of every slash goes to the address that raised the successful challenge; the rest goes to the protocol treasury. This creates a direct economic incentive for third parties to monitor epoch commitments and submit challenges.
+
+**Claim expiry.** Reporters have 90 days after an epoch is committed to claim their rewards (with the first 12 hours reserved for the fisherman challenge window). Unclaimed balances are swept to the treasury, recycling value back into the protocol.
 
 ## Architecture Decisions
 
