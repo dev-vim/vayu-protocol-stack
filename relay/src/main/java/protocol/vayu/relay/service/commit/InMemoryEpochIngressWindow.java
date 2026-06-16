@@ -18,6 +18,9 @@ public class InMemoryEpochIngressWindow implements EpochIngressWindow {
     private final ConcurrentMap<Long, ConcurrentLinkedQueue<ReadingSubmissionRequest>> readingsByEpoch =
             new ConcurrentHashMap<>();
 
+    // Per-epoch replay guard. Each key represents reporter + epoch + H3 cell, so
+    // duplicate HTTP retries or replayed submissions cannot inflate aggregation.
+    // The set is dropped when the epoch is drained and no longer accepts readings.
     private final ConcurrentMap<Long, Set<String>> seenKeysByEpoch = new ConcurrentHashMap<>();
 
     public InMemoryEpochIngressWindow(MeterRegistry registry) {
@@ -28,8 +31,8 @@ public class InMemoryEpochIngressWindow implements EpochIngressWindow {
 
     /**
      * Atomically claims {@code replayKey} for the reading's epoch without enqueuing it.
-     * The first caller for a given key wins; all subsequent callers for the same key
-     * receive {@code false}.
+     * The first caller for a reporter/epoch/cell key wins; all subsequent callers
+     * for the same key are treated as duplicate replays and receive {@code false}.
      */
     @Override
     public boolean tryClaimReplayKey(long epochId, String replayKey) {

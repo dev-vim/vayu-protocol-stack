@@ -115,6 +115,9 @@ public class ReadingIngestionService {
             throw e;
         }
 
+        // One reporter may contribute at most one reading for the same H3 cell in
+        // an epoch. Claiming this key before enqueueing prevents retries/replays
+        // from being counted multiple times in the epoch aggregate.
         String replayKey = request.reporter().toLowerCase()
                 + ":" + request.epochId()
                 + ":" + request.h3Index().toLowerCase();

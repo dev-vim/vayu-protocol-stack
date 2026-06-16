@@ -13,7 +13,7 @@
 
     <groupId>protocol.vayu</groupId>
     <artifactId>relay</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>vayu-relay</name>
     <description>Vayu relay write-path service</description>
 
